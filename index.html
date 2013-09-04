@@ -1,3 +1,8 @@
+---
+layout: default
+title: My Blog
+---
+
 <!DOCTYPE html>
 <html>
   <head>
@@ -28,7 +33,7 @@
     <div id="content-wrapper">
       <div class="inner clearfix">
         <section id="main-content">
-      　　<p>Blogs:</p>
+      　　<p>Files:</p>
 　      　<ul>
 　　　　    {% for post in site.posts %}
 　　  　　　　<li>{{ post.date | date_to_string }} <a href="{{ site.baseurl }}{{ post.url }}">{{ post.title }}</a></li>
