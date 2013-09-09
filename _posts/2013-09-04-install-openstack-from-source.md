@@ -683,9 +683,9 @@ To distribute the partitions across the drives in the ring
 	# default_store = file
 	default_store = swift
 
-	# tenant:user
+	swift_store_auth_address = http://127.0.0.1:35357/v2.0/
 	swift_store_user = admin:admin
-	swift_store_key = fa9a647b8de836869722
+	swift_store_key = 123456
 	swift_store_create_container_on_put = True
 	
 	[keystone_authtoken]
@@ -700,10 +700,9 @@ To distribute the partitions across the drives in the ring
 
 	[DEFAULT]
 	#sql_connection = sqlite:///glance.sqlite
-	sql_connection = mysql://root:111111@localhost/glance
+	sql_connection = mysql://root:111111@127.0.0.1/glance
 	
 	[keystone_authtoken]
-	auth_uri = http://127.0.0.1:5000/
 	admin_tenant_name = admin
 	admin_user = admin
 	admin_password = 123456
@@ -749,7 +748,7 @@ To distribute the partitions across the drives in the ring
 
 测试一下
 
-	. ~/keystonerc_joe
+	. ~/keystonerc_admin
 
 	glance image-list
 	+----+------+-------------+------------------+------+--------+
@@ -761,8 +760,26 @@ To distribute the partitions across the drives in the ring
 
 	head -c 1024 /dev/urandom > ~/image.file
 
-	glance add name="test image" is_public=true disk_format=aki \
+	$ glance add name="test image" is_public=true disk_format=aki \
 	container_format=aki < ~/image.file
+	Added new image with ID: 32672784-6813-48c2-8c09-7ec99dd2c4a6
+	
+查看一下
+
+	glance image-list
+	+--------------------------------------+------------+-------------+------------------+------+--------+
+	| ID                                   | Name       | Disk Format | Container Format | Size | Status |
+	+--------------------------------------+------------+-------------+------------------+------+--------+
+	| 1a736b75-3e49-4fed-97f1-f3257a75b3b8 | test image | aki         | aki              | 1024 | active |
+	+--------------------------------------+------------+-------------+------------------+------+--------+
+
+	$ swift list
+	c1
+	c2
+	glance
+
+	$ swift list glance
+	1a736b75-3e49-4fed-97f1-f3257a75b3b8
 
 
 
@@ -912,12 +929,23 @@ To distribute the partitions across the drives in the ring
 
     pip install python-glanceclient
 
-## [glance add] Authorization Failed: <attribute 'message' of 'exceptions.BaseException' objects> (HTTP Unable to establish connection to http://127.0.0.1:35357/v2.0/tokens)
+## [glance add] Authorization Failed: *** (HTTP Unable to establish connection to http://127.0.0.1:35357/v2.0/tokens)
 
 确认keystone服务是否启动
 
     ps -Af | grep keystone
     keystone-all &
+    
+## [glance add] Authorization Failed: *** (HTTP Unable to establish connection to https://127.0.0.1:35357/v2.0/tokens)
+
+注意，这里的报错是`https`，检查配置文件`/etc/glance/glance-api.conf`
+
+	# Valid schemes are 'http://' and 'https://'
+	# If no scheme specified,  default to 'https://'
+	swift_store_auth_address = http://127.0.0.1:35357/v2.0/
+	
+注意注释部分，如果没有`http://`则默认使用`https://`
+
 
 ## [glance add] code 400, message Bad HTTP/0.9 request type
 
@@ -948,5 +976,17 @@ swift中没有`glance`这个container，可以手动创建，也可以修改配�
 ## [glance-api --config-file /etc/glance/glance-api.conf] Stderr: '/bin/sh: 1: collie: not found\n'
 
 	apt-get install sheepdog
+	
+## [glance add] ClientException: Unauthorised. Check username, password and tenant name/id
+
+账户设置有问题，可以检查配置`/etc/glance/glance-api.conf`，也可以在报错文件的语句前插入打印语句查看
+
+	swift_store_auth_address = http://127.0.0.1:35357/v2.0/
+	swift_store_user = admin:admin
+	swift_store_key = 123456
+
+
+
+
 	
 	
