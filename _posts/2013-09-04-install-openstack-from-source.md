@@ -34,7 +34,7 @@
 国内用户可以换更快的源
 
 	sudo su
-	echo > /etc/apt/sources.list << EOF
+	cat > /etc/apt/sources.list << EOF
 	deb http://mirrors.163.com/ubuntu/ precise main universe restricted multiverse
 	deb-src http://mirrors.163.com/ubuntu/ precise main universe restricted multiverse
 	deb http://mirrors.163.com/ubuntu/ precise-security universe main multiverse restricted
@@ -638,7 +638,9 @@ To distribute the partitions across the drives in the ring
 	head -c 1024 /dev/urandom > data2.file ; swift upload c1 data2.file
 	head -c 1024 /dev/urandom > data3.file ; swift upload c2 data3.file
 	
-	swift list
+	$ swift list
+	c1
+	c2
 	
 	$ swift list c1
 	data.file
@@ -780,6 +782,289 @@ To distribute the partitions across the drives in the ring
 
 	$ swift list glance
 	1a736b75-3e49-4fed-97f1-f3257a75b3b8
+
+##安装Nova
+
+获取源码
+
+	git clone git://github.com/openstack/nova.git
+	
+安装依赖
+
+	cd nova
+	pip install -r requirements.txt
+	
+安装nova到系统
+
+	python setup.py  install
+
+安装配置文件
+
+	cp -af  etc/nova /etc
+	cp /etc/nova/nova.conf.sample /etc/nova/nova.conf
+
+检查VT-X支持
+
+	apt-get install cpu-checker
+	kvm-ok
+	
+如果支持KVM就会显示
+
+	INFO: /dev/kvm exists	KVM acceleration can be used
+
+如果不支持
+
+	INFO: Your CPU does not support KVM extensions
+	KVM acceleration can NOT be used
+	
+我的虚机系统显示不支持，不能使用默认的KVM，所以就用QEMU测试
+
+###QEMU
+
+修改配置`/etc/nova/nova.conf`
+
+	￼compute_driver=libvirt.LibvirtDriver	libvirt_type=qemu
+
+安装相关包
+
+	apt-get install guestmount
+	
+###预配网络
+
+将网卡设为`promiscuous mode`
+
+	ip link set eth0 promisc on
+	
+修改网卡配置`/etc/network/interface`
+
+	# The loopback network interface
+	auto lo
+	iface lo inet loopback
+
+	# The primary network interface
+	auto eth0
+	iface eth0 inet dhcp
+
+	# Bridge network interface for VM networks
+	auto br100
+	iface br100 inet static
+	address 192.168.100.1
+	netmask 255.255.255.0
+	bridge_stp off
+	bridge_fd 0
+
+增加桥接设备（取名`br100`）
+
+	apt-get install bridge-utils
+	brctl addbr br100
+	/etc/init.d/networking restart
+
+检查一下
+
+	$ ifconfig
+	br100	Link encap:Ethernet  HWaddr 46:4c:e1:8e:79:73  
+			inet addr:192.168.100.1  Bcast:192.168.100.255  Mask:255.255.255.0
+			inet6 addr: fe80::444c:e1ff:fe8e:7973/64 Scope:Link
+			UP BROADCAST RUNNING MULTICAST  MTU:1500  Metric:1
+			RX packets:0 errors:0 dropped:0 overruns:0 frame:0
+			TX packets:13 errors:0 dropped:0 overruns:0 carrier:0
+			collisions:0 txqueuelen:0 
+			RX bytes:0 (0.0 B)  TX bytes:1022 (1.0 KB)
+
+	eth0	Link encap:Ethernet  HWaddr 08:00:27:88:0c:a6  
+			inet addr:10.0.2.15  Bcast:10.0.2.255  Mask:255.255.255.0
+			inet6 addr: fe80::a00:27ff:fe88:ca6/64 Scope:Link
+			UP BROADCAST RUNNING PROMISC MULTICAST  MTU:1500  Metric:1
+			RX packets:125943 errors:0 dropped:0 overruns:0 frame:0
+			TX packets:65909 errors:0 dropped:0 overruns:0 carrier:0
+			collisions:0 txqueuelen:1000 
+			RX bytes:101091933 (101.0 MB)  TX bytes:3925291 (3.9 MB)
+
+	lo		Link encap:Local Loopback  
+			inet addr:127.0.0.1  Mask:255.0.0.0
+			inet6 addr: ::1/128 Scope:Host
+			UP LOOPBACK RUNNING  MTU:16436  Metric:1
+			RX packets:0 errors:0 dropped:0 overruns:0 frame:0
+			TX packets:0 errors:0 dropped:0 overruns:0 carrier:0
+			collisions:0 txqueuelen:0 
+			RX bytes:0 (0.0 B)  TX bytes:0 (0.0 B)
+	
+###配置数据库
+
+创建nova的数据库
+
+	mysql -u root -p
+	create database nova;
+	quit
+
+###安装配置RabbitMQ
+
+安装
+
+	apt-get install -y rabbitmq-server
+
+修改用户密码
+
+	rabbitmqctl change_password guest 321321
+
+###安装配置块存储（Cinder）
+
+获取源码
+
+	git clone https://github.com/openstack/cinder.git
+	git clone https://github.com/openstack/python-cinderclient.git
+
+安装
+
+	cd cinder
+	pip install -r requirements.txt
+	python setup.py  install
+	
+	cd ../python-cinderclient/
+	pip install -r requirements.txt
+	python setup.py  install
+	
+安装配置
+
+	cp -af etc/cinder /etc
+	cp /etc/cinder/cinder.conf.sample /etc/cinder/cinder.conf
+	
+修改`/etc/cinder/api-paste.ini`
+
+	[filter:authtoken]
+	paste.filter_factory = keystoneclient.middleware.auth_token:filter_factory
+	service_protocol = http
+	service_host = 127.0.0.1
+	service_port = 5000
+	auth_host = 127.0.0.1
+	auth_port = 35357
+	auth_protocol = http
+	admin_tenant_name = admin
+	admin_user = admin
+	admin_password = 123456
+
+修改`/etc/cinder/cinder.conf`
+
+	[DEFAULT]
+	rootwrap_config=/etc/cinder/rootwrap.conf
+	connection=mysql://root:111111@127.0.0.1/cinder
+	api_paste_config=/etc/cinder/api-paste.ini
+	
+	iscsi_helper=tgtadm
+	volume_name_template=volume-%s
+	volume_group=cinder-volumes
+	verbose=true
+	auth_strategy=keystone
+	
+	log_file=cinder.log
+	log_dir=/var/log/cinder
+	
+	fake_rabbit=true
+	rabbit_host=localhost
+	rabbit_port=5672
+	rabbit_userid=guest
+	rabbit_password=321321
+	rabbit_virtual_host=/nova
+
+创建cinder数据库
+
+	mysql -u root -p
+	create database cinder;
+	quit
+
+TGT
+
+	apt-get install tgt
+	
+	mkdir -p /var/lib/cinder/volumes
+	sh -c "echo 'include /var/lib/cinder/volumes/*' >> /etc/tgt/conf.d/cinder.conf"
+
+	restart tgt
+
+初始化数据库
+
+	cinder-manage db sync
+	
+创建卷
+
+	dd if=/dev/zero of=~/cinder-volumes bs=1 count=0 seek=2G
+	losetup /dev/loop2 cinder-volumes
+	pvcreate /dev/loop2
+	vgcreate cinder-volumes /dev/loop2
+	
+	$ pvscan
+	PV /dev/sda5    VG precise64        lvm2 [79.76 GiB / 0    free]
+	PV /dev/loop2   VG cinder-volumes   lvm2 [2.00 GiB / 2.00 GiB free]
+	Total: 2 [81.75 GiB] / in use: 2 [81.75 GiB] / in no VG: 0 [0   ]
+
+启动服务
+
+	cinder-all &
+
+创建`service`和`endpoint`
+
+	keystone service-create --name=volume --type=volume --description="Nova Volume Service"
+	+-------------+----------------------------------+
+	|   Property  |              Value               |
+	+-------------+----------------------------------+
+	| description |      Nova Volume Service         |
+	|      id     | 0f66c20499ca4f77990e286a3607e5aa |
+	|     name    |              volume              |
+	|     type    |              volume              |
+	+-------------+----------------------------------+
+	
+	keystone endpoint-create --service_id=0f66c20499ca4f77990e286a3607e5aa \
+                        --publicurl "http://localhost:8776/v1/\$(tenant_id)s" \
+                        --adminurl "http://localhost:8776/v1/\$(tenant_id)s" \
+                        --internalurl "http://localhost:8776/v1/\$(tenant_id)s"
+	+-------------+----------------------------------------+
+	|   Property  |                 Value                  |
+	+-------------+----------------------------------------+
+	|   adminurl  | http://localhost:8776/v1/$(tenant_id)s |
+	|      id     |    a62cb598466f411bb8f6381495994690    |
+	| internalurl | http://localhost:8776/v1/$(tenant_id)s |
+	|  publicurl  | http://localhost:8776/v1/$(tenant_id)s |
+	|    region   |               regionOne                |
+	|  service_id |    0f66c20499ca4f77990e286a3607e5aa    |
+	+-------------+----------------------------------------+
+	
+	keystone endpoint-list
+
+创建1G的Volumn测试一下（取名：test）
+
+	cinder list
+	+----+--------+--------------+------+-------------+----------+-------------+
+	| ID | Status | Display Name | Size | Volume Type | Bootable | Attached to |
+	+----+--------+--------------+------+-------------+----------+-------------+
+	+----+--------+--------------+------+-------------+----------+-------------+
+
+	cinder create --display_name test 1
+	+---------------------+--------------------------------------+
+	|       Property      |                Value                 |
+	+---------------------+--------------------------------------+
+	|     attachments     |                  []                  |
+	|  availability_zone  |                 nova                 |
+	|       bootable      |                False                 |
+	|      created_at     |      2013-09-17T15:57:24.542037      |
+	| display_description |                 None                 |
+	|     display_name    |                 test                 |
+	|          id         | fbda9189-26e2-4e42-9622-f707be57d565 |
+	|       metadata      |                  {}                  |
+	|         size        |                  1                   |
+	|     snapshot_id     |                 None                 |
+	|     source_volid    |                 None                 |
+	|        status       |               creating               |
+	|     volume_type     |                 None                 |
+	+---------------------+--------------------------------------+
+	
+	cinder list
+	+--------------------------------------+----------+--------------+------+-------------+----------+-------------+
+	|                  ID                  |  Status  | Display Name | Size | Volume Type | Bootable | Attached to |
+	+--------------------------------------+----------+--------------+------+-------------+----------+-------------+
+	| fbda9189-26e2-4e42-9622-f707be57d565 | creating |     test     |  1   |     None    |  False   |             |
+	+--------------------------------------+----------+--------------+------+-------------+----------+-------------+	
+
+
 
 
 
@@ -985,8 +1270,32 @@ swift中没有`glance`这个container，可以手动创建，也可以修改配�
 	swift_store_user = admin:admin
 	swift_store_key = 123456
 
+## [nova, pvcreate /dev/loop2] Device /dev/loop2 not found (or ignored by filtering)
 
+可能是修改了`/etc/lvm/lvm.conf`中的`filter`造成的
 
+## [cinder-all] AMQP server on localhost:5672 is unreachable: Socket closed. 
 
-	
-	
+修改`/etc/cinder/cinder.conf`（默认使用AMQP，改为Rabbit）
+
+	fake_rabbit=true
+
+## [cinder create] ERROR cinder.scheduler.filters.capacity_filter [***] Free capacity not set: volume node info collection broken.
+## [cinder create] ERROR cinder.volume.flows.create_volume [***] Failed to schedule_create_volume: No valid host was found.
+
+使用`cinder-all`启动所有服务，然后`cinder create`时会就遇到这个报错；
+
+使用如下启动方式时正常：
+
+	cinder-volume --config-file=/etc/cinder/cinder.conf
+	cinder-api --config-file=/etc/cinder/cinder.conf
+	cinder-scheduler  --config-file=/etc/cinder/cinder.conf
+
+## [cinder list] `Status`一直都是`creating`
+
+	cinder list
+	+--------------------------------------+----------+--------------+------+-------------+----------+-------------+
+	|                  ID                  |  Status  | Display Name | Size | Volume Type | Bootable | Attached to |
+	+--------------------------------------+----------+--------------+------+-------------+----------+-------------+
+	| fbda9189-26e2-4e42-9622-f707be57d565 | creating |     test     |  1   |     None    |  False   |             |
+	+--------------------------------------+----------+--------------+------+-------------+----------+-------------+
