@@ -783,6 +783,169 @@ To distribute the partitions across the drives in the ring
 	$ swift list glance
 	1a736b75-3e49-4fed-97f1-f3257a75b3b8
 
+
+##安装Cinder
+
+获取源码
+
+	git clone https://github.com/openstack/cinder.git
+	git clone https://github.com/openstack/python-cinderclient.git
+
+安装
+
+	cd cinder
+	pip install -r requirements.txt
+	python setup.py  install
+	
+	cd ../python-cinderclient/
+	pip install -r requirements.txt
+	python setup.py  install
+	
+	apt-get install tgt open-iscsi rabbitmq-server
+	
+安装配置
+
+	cp -af etc/cinder /etc
+	cp /etc/cinder/cinder.conf.sample /etc/cinder/cinder.conf
+	
+修改`/etc/cinder/api-paste.ini`
+
+	[filter:authtoken]
+	paste.filter_factory = keystoneclient.middleware.auth_token:filter_factory
+	service_protocol = http
+	service_host = 127.0.0.1
+	service_port = 5000
+	auth_host = 127.0.0.1
+	auth_port = 35357
+	auth_protocol = http
+	admin_tenant_name = admin
+	admin_user = admin
+	admin_password = 123456
+
+修改`/etc/cinder/cinder.conf`
+
+	[DEFAULT]
+	rootwrap_config=/etc/cinder/rootwrap.conf
+	sql_connection=mysql://root:111111@127.0.0.1/cinder
+	api_paste_config=/etc/cinder/api-paste.ini
+	
+	iscsi_helper=tgtadm
+	volume_name_template=volume-%s
+	volume_group=cinder-volumes
+	verbose=true
+	auth_strategy=keystone
+	
+	log_file=cinder.log
+	log_dir=/var/log/cinder
+	
+	rabbit_host=localhost
+	rabbit_port=5672
+	rabbit_userid=guest
+	rabbit_password=321321
+	rabbit_virtual_host=/
+
+创建cinder数据库
+
+	mysql -u root -p
+	create database cinder;
+	quit
+
+配置RabbitMQ
+
+	rabbitmqctl change_password guest 321321
+
+配置TGT
+
+	mkdir -p /var/lib/cinder/volumes
+	sh -c "echo 'include /var/lib/cinder/volumes/*' >> /etc/tgt/conf.d/cinder.conf"
+
+	restart tgt
+
+初始化数据库
+
+	cinder-manage db sync
+	
+创建卷
+
+	dd if=/dev/zero of=~/cinder-volumes bs=1 count=0 seek=2G
+	losetup /dev/loop2 ~/cinder-volumes
+	pvcreate /dev/loop2
+	vgcreate cinder-volumes /dev/loop2
+	
+	$ pvscan
+	PV /dev/sda5    VG precise64        lvm2 [79.76 GiB / 0    free]
+	PV /dev/loop2   VG cinder-volumes   lvm2 [2.00 GiB / 2.00 GiB free]
+	Total: 2 [81.75 GiB] / in use: 2 [81.75 GiB] / in no VG: 0 [0   ]
+
+启动服务
+
+	cinder-volume --config-file=/etc/cinder/cinder.conf
+	cinder-api --config-file=/etc/cinder/cinder.conf
+	cinder-scheduler --config-file=/etc/cinder/cinder.conf
+
+创建`service`和`endpoint`
+
+	keystone service-create --name=volume --type=volume --description="Nova Volume Service"
+	+-------------+----------------------------------+
+	|   Property  |              Value               |
+	+-------------+----------------------------------+
+	| description |      Nova Volume Service         |
+	|      id     | 0f66c20499ca4f77990e286a3607e5aa |
+	|     name    |              volume              |
+	|     type    |              volume              |
+	+-------------+----------------------------------+
+	
+	keystone endpoint-create --service_id=0f66c20499ca4f77990e286a3607e5aa \
+                        --publicurl "http://localhost:8776/v1/\$(tenant_id)s" \
+                        --adminurl "http://localhost:8776/v1/\$(tenant_id)s" \
+                        --internalurl "http://localhost:8776/v1/\$(tenant_id)s"
+	+-------------+----------------------------------------+
+	|   Property  |                 Value                  |
+	+-------------+----------------------------------------+
+	|   adminurl  | http://localhost:8776/v1/$(tenant_id)s |
+	|      id     |    a62cb598466f411bb8f6381495994690    |
+	| internalurl | http://localhost:8776/v1/$(tenant_id)s |
+	|  publicurl  | http://localhost:8776/v1/$(tenant_id)s |
+	|    region   |               regionOne                |
+	|  service_id |    0f66c20499ca4f77990e286a3607e5aa    |
+	+-------------+----------------------------------------+
+	
+	keystone endpoint-list
+
+创建1G的volume测试一下（取名：test）
+
+	cinder list
+	+----+--------+--------------+------+-------------+----------+-------------+
+	| ID | Status | Display Name | Size | Volume Type | Bootable | Attached to |
+	+----+--------+--------------+------+-------------+----------+-------------+
+	+----+--------+--------------+------+-------------+----------+-------------+
+
+	cinder create --display_name test 1
+	+---------------------+--------------------------------------+
+	|       Property      |                Value                 |
+	+---------------------+--------------------------------------+
+	|     attachments     |                  []                  |
+	|  availability_zone  |                 nova                 |
+	|       bootable      |                False                 |
+	|      created_at     |      2013-09-23T13:08:54.358719      |
+	| display_description |                 None                 |
+	|     display_name    |                 test                 |
+	|          id         | 7e7a503c-0f47-4a74-88a6-e4fd84a9592b |
+	|       metadata      |                  {}                  |
+	|         size        |                  1                   |
+	|     snapshot_id     |                 None                 |
+	|     source_volid    |                 None                 |
+	|        status       |               creating               |
+	|     volume_type     |                 None                 |
+	+---------------------+--------------------------------------+
+
+	cinder list
+	+--------------------------------------+-----------+--------------+------+-------------+----------+-------------+
+	|                  ID                  |   Status  | Display Name | Size | Volume Type | Bootable | Attached to |
+	+--------------------------------------+-----------+--------------+------+-------------+----------+-------------+
+	| 7e7a503c-0f47-4a74-88a6-e4fd84a9592b | available |     test     |  1   |     None    |  False   |             |
+	+--------------------------------------+-----------+--------------+------+-------------+----------+-------------+
+
 ##安装Nova
 
 获取源码
@@ -897,172 +1060,16 @@ To distribute the partitions across the drives in the ring
 	create database nova;
 	quit
 
-###安装配置RabbitMQ
-
-安装
-
-	apt-get install -y rabbitmq-server
-
-修改用户密码
-
-	rabbitmqctl change_password guest 321321
-
-###安装配置块存储（Cinder）
-
-获取源码
-
-	git clone https://github.com/openstack/cinder.git
-	git clone https://github.com/openstack/python-cinderclient.git
-
-安装
-
-	cd cinder
-	pip install -r requirements.txt
-	python setup.py  install
-	
-	cd ../python-cinderclient/
-	pip install -r requirements.txt
-	python setup.py  install
-	
-安装配置
-
-	cp -af etc/cinder /etc
-	cp /etc/cinder/cinder.conf.sample /etc/cinder/cinder.conf
-	
-修改`/etc/cinder/api-paste.ini`
-
-	[filter:authtoken]
-	paste.filter_factory = keystoneclient.middleware.auth_token:filter_factory
-	service_protocol = http
-	service_host = 127.0.0.1
-	service_port = 5000
-	auth_host = 127.0.0.1
-	auth_port = 35357
-	auth_protocol = http
-	admin_tenant_name = admin
-	admin_user = admin
-	admin_password = 123456
+###配置Cinder
 
 修改`/etc/cinder/cinder.conf`
 
-	[DEFAULT]
-	rootwrap_config=/etc/cinder/rootwrap.conf
-	connection=mysql://root:111111@127.0.0.1/cinder
-	api_paste_config=/etc/cinder/api-paste.ini
-	
-	iscsi_helper=tgtadm
-	volume_name_template=volume-%s
-	volume_group=cinder-volumes
-	verbose=true
-	auth_strategy=keystone
-	
-	log_file=cinder.log
-	log_dir=/var/log/cinder
-	
-	fake_rabbit=true
-	rabbit_host=localhost
-	rabbit_port=5672
-	rabbit_userid=guest
-	rabbit_password=321321
-	rabbit_virtual_host=/nova
+	rabbit_virtual_host = /nova
 
-创建cinder数据库
+修改`/etc/nova/nova.conf`
 
-	mysql -u root -p
-	create database cinder;
-	quit
+	volume_api_class=nova.volume.cinder.API
 
-TGT
-
-	apt-get install tgt
-	
-	mkdir -p /var/lib/cinder/volumes
-	sh -c "echo 'include /var/lib/cinder/volumes/*' >> /etc/tgt/conf.d/cinder.conf"
-
-	restart tgt
-
-初始化数据库
-
-	cinder-manage db sync
-	
-创建卷
-
-	dd if=/dev/zero of=~/cinder-volumes bs=1 count=0 seek=2G
-	losetup /dev/loop2 cinder-volumes
-	pvcreate /dev/loop2
-	vgcreate cinder-volumes /dev/loop2
-	
-	$ pvscan
-	PV /dev/sda5    VG precise64        lvm2 [79.76 GiB / 0    free]
-	PV /dev/loop2   VG cinder-volumes   lvm2 [2.00 GiB / 2.00 GiB free]
-	Total: 2 [81.75 GiB] / in use: 2 [81.75 GiB] / in no VG: 0 [0   ]
-
-启动服务
-
-	cinder-all &
-
-创建`service`和`endpoint`
-
-	keystone service-create --name=volume --type=volume --description="Nova Volume Service"
-	+-------------+----------------------------------+
-	|   Property  |              Value               |
-	+-------------+----------------------------------+
-	| description |      Nova Volume Service         |
-	|      id     | 0f66c20499ca4f77990e286a3607e5aa |
-	|     name    |              volume              |
-	|     type    |              volume              |
-	+-------------+----------------------------------+
-	
-	keystone endpoint-create --service_id=0f66c20499ca4f77990e286a3607e5aa \
-                        --publicurl "http://localhost:8776/v1/\$(tenant_id)s" \
-                        --adminurl "http://localhost:8776/v1/\$(tenant_id)s" \
-                        --internalurl "http://localhost:8776/v1/\$(tenant_id)s"
-	+-------------+----------------------------------------+
-	|   Property  |                 Value                  |
-	+-------------+----------------------------------------+
-	|   adminurl  | http://localhost:8776/v1/$(tenant_id)s |
-	|      id     |    a62cb598466f411bb8f6381495994690    |
-	| internalurl | http://localhost:8776/v1/$(tenant_id)s |
-	|  publicurl  | http://localhost:8776/v1/$(tenant_id)s |
-	|    region   |               regionOne                |
-	|  service_id |    0f66c20499ca4f77990e286a3607e5aa    |
-	+-------------+----------------------------------------+
-	
-	keystone endpoint-list
-
-创建1G的Volumn测试一下（取名：test）
-
-	cinder list
-	+----+--------+--------------+------+-------------+----------+-------------+
-	| ID | Status | Display Name | Size | Volume Type | Bootable | Attached to |
-	+----+--------+--------------+------+-------------+----------+-------------+
-	+----+--------+--------------+------+-------------+----------+-------------+
-
-	cinder create --display_name test 1
-	+---------------------+--------------------------------------+
-	|       Property      |                Value                 |
-	+---------------------+--------------------------------------+
-	|     attachments     |                  []                  |
-	|  availability_zone  |                 nova                 |
-	|       bootable      |                False                 |
-	|      created_at     |      2013-09-17T15:57:24.542037      |
-	| display_description |                 None                 |
-	|     display_name    |                 test                 |
-	|          id         | fbda9189-26e2-4e42-9622-f707be57d565 |
-	|       metadata      |                  {}                  |
-	|         size        |                  1                   |
-	|     snapshot_id     |                 None                 |
-	|     source_volid    |                 None                 |
-	|        status       |               creating               |
-	|     volume_type     |                 None                 |
-	+---------------------+--------------------------------------+
-	
-	cinder list
-	+--------------------------------------+----------+--------------+------+-------------+----------+-------------+
-	|                  ID                  |  Status  | Display Name | Size | Volume Type | Bootable | Attached to |
-	+--------------------------------------+----------+--------------+------+-------------+----------+-------------+
-	| fbda9189-26e2-4e42-9622-f707be57d565 | creating |     test     |  1   |     None    |  False   |             |
-	+--------------------------------------+----------+--------------+------+-------------+----------+-------------+	
 
 
 
@@ -1274,12 +1281,6 @@ swift中没有`glance`这个container，可以手动创建，也可以修改配�
 
 可能是修改了`/etc/lvm/lvm.conf`中的`filter`造成的
 
-## [cinder-all] AMQP server on localhost:5672 is unreachable: Socket closed. 
-
-修改`/etc/cinder/cinder.conf`（默认使用AMQP，改为Rabbit）
-
-	fake_rabbit=true
-
 ## [cinder create] ERROR cinder.scheduler.filters.capacity_filter [***] Free capacity not set: volume node info collection broken.
 ## [cinder create] ERROR cinder.volume.flows.create_volume [***] Failed to schedule_create_volume: No valid host was found.
 
@@ -1299,3 +1300,11 @@ swift中没有`glance`这个container，可以手动创建，也可以修改配�
 	+--------------------------------------+----------+--------------+------+-------------+----------+-------------+
 	| fbda9189-26e2-4e42-9622-f707be57d565 | creating |     test     |  1   |     None    |  False   |             |
 	+--------------------------------------+----------+--------------+------+-------------+----------+-------------+
+
+首先确定数据库`cinder`中是否有表，即确保`cinder-manage db sync`执行成功
+	
+## [cinder-volume] AMQP server on localhost:5672 is unreachable
+
+在不使用nova的情况下，确认`/etc/cinder/cinder.conf`
+
+	rabbit_virtual_host=/
