@@ -951,19 +951,31 @@ To distribute the partitions across the drives in the ring
 获取源码
 
 	git clone git://github.com/openstack/nova.git
+	git clone https://github.com/openstack/python-novaclient.git
 	
-安装依赖
+安装源码
 
 	cd nova
 	pip install -r requirements.txt
-	
-安装nova到系统
-
 	python setup.py  install
+	cd ..
+	
+	cd python-novaclient
+	pip install -r requirements.txt
+	python setup.py  install
+	cd ..
+	
+	
+安装依赖（直接安装novnc会作为依赖安装比较早的novaclient包，可能导致错误）
+
+	apt-get install python-libvirt
+	
+	apt-get download novnc
+	dpkg --force-all -i novnc_*.deb
 
 安装配置文件
 
-	cp -af  etc/nova /etc
+	cp -af  nova/etc/nova /etc
 	cp /etc/nova/nova.conf.sample /etc/nova/nova.conf
 
 检查VT-X支持
@@ -971,7 +983,7 @@ To distribute the partitions across the drives in the ring
 	apt-get install cpu-checker
 	kvm-ok
 	
-如果支持KVM就会显示
+如果支持KVM，就会显示
 
 	INFO: /dev/kvm exists	KVM acceleration can be used
 
@@ -1060,15 +1072,156 @@ To distribute the partitions across the drives in the ring
 	create database nova;
 	quit
 
+/*
 ###配置Cinder
 
 修改`/etc/cinder/cinder.conf`
 
-	rabbit_virtual_host = /nova
+	rabbit_virtual_host = /
 
 修改`/etc/nova/nova.conf`
 
 	volume_api_class=nova.volume.cinder.API
+*/
+
+###配置Nova
+
+`/etc/nova/nova.conf` 全部配置如下：
+
+	# LOGS/STATE
+	verbose=True
+	logdir=/var/log/nova
+	state_path=/var/lib/nova
+	lock_path=/var/lock/nova
+	rootwrap_config=/etc/nova/rootwrap.conf
+
+	# SCHEDULER
+	compute_scheduler_driver=nova.scheduler.filter_scheduler.FilterScheduler
+
+	# VOLUMES
+	volume_api_class=nova.volume.cinder.API
+	volume_driver=nova.volume.driver.ISCSIDriver
+	volume_group=cinder-volumes
+	volume_name_template=volume-%s
+	iscsi_helper=tgtadm
+
+	# DATABASE
+	sql_connection=mysql://root:111111@127.0.0.1/nova
+
+	# COMPUTE
+	libvirt_type=qemu
+	compute_driver=libvirt.LibvirtDriver
+	instance_name_template=instance-%08x
+	api_paste_config=/etc/nova/api-paste.ini
+
+	# COMPUTE/APIS: if you have separate configs for separate services
+	# this flag is required for both nova-api and nova-compute
+	#allow_resize_to_same_host=True
+
+	# APIS
+	osapi_compute_extension=nova.api.openstack.compute.contrib.standard_extensions
+	ec2_dmz_host=127.0.0.1
+	s3_host=127.0.0.1
+	enabled_apis=ec2,osapi_compute,metadata
+
+	# RABBITMQ
+	rabbit_host=localhost
+	rabbit_port=5672
+	rabbit_userid=guest
+	rabbit_password=321321
+	rabbit_virtual_host=/
+
+	# GLANCE
+	image_service=nova.image.glance.GlanceImageService
+	glance_api_servers=127.0.0.1:9292
+
+	# NETWORK
+	network_manager=nova.network.manager.FlatDHCPManager
+	force_dhcp_release=True
+	dhcpbridge_flagfile=/etc/nova/nova.conf
+	#firewall_driver=nova.virt.libvirt.firewall.IptablesFirewallDriver
+	# Change my_ip to match each host
+	my_ip=127.0.0.1
+	public_interface=eth0
+	vlan_interface=eth0
+	flat_network_bridge=br100
+	flat_interface=eth0
+	fixed_range=192.168.100.0/24
+
+	# NOVNC CONSOLE
+	novncproxy_base_url=http://127.0.0.1:6080/vnc_auto.html
+	# Change vncserver_proxyclient_address and vncserver_listen to match each compute host
+	vncserver_proxyclient_address=127.0.0.1
+	vncserver_listen=127.0.0.1
+
+	# AUTHENTICATION
+	auth_strategy=keystone
+	[keystone_authtoken]
+	auth_host = 127.0.0.1
+	auth_port = 35357
+	auth_protocol = http
+	admin_tenant_name = admin
+	admin_user = admin
+	admin_password = admin
+	signing_dirname = /tmp/keystone-signing-nova
+
+修改`/etc/nova/api-paste.ini`
+
+	[filter:authtoken]
+	admin_tenant_name = admin
+	admin_user = admin
+	admin_password = 123456
+
+创建相应目录
+
+	mkdir /var/log/nova
+
+###初始化数据库
+
+	nova-manage db sync
+	
+###启动服务	# controller node
+	nova-api &
+	nova-conductor &
+	nova-network &
+	nova-scheduler &
+	nova-novncproxy &
+
+	# compute node
+	nova-compute &
+	#nova-network &
+
+###创建虚机使用的网络
+
+	nova-manage network create private --fixed_range_v4=192.168.100.0/24 --bridge_interface=br100
+	
+###验证一下
+
+	$ nova-manage service list
+	Binary           Host                                 Zone             Status     State Updated_At
+	nova-conductor   precise64                            internal         enabled    :-)   2013-09-24 16:21:53
+	nova-network     precise64                            internal         enabled    :-)   2013-09-24 16:21:53
+	nova-scheduler   precise64                            internal         enabled    :-)   2013-09-24 16:21:56
+	nova-compute     precise64                            nova             enabled    :-)   2013-09-24 16:21:51
+
+	$ nova-manage version
+	2013.2
+
+`nova image-list`输出结果应该和`glance image-list`相同
+
+	$ nova image-list
+	+--------------------------------------+------------+--------+--------+
+	| ID                                   | Name       | Status | Server |
+	+--------------------------------------+------------+--------+--------+
+	| 1a736b75-3e49-4fed-97f1-f3257a75b3b8 | test image | ACTIVE |        |
+	+--------------------------------------+------------+--------+--------+
+	
+	$ glance image-list
+	+--------------------------------------+------------+-------------+------------------+------+--------+
+	| ID                                   | Name       | Disk Format | Container Format | Size | Status |
+	+--------------------------------------+------------+-------------+------------------+------+--------+
+	| 1a736b75-3e49-4fed-97f1-f3257a75b3b8 | test image | aki         | aki              | 1024 | active |
+	+--------------------------------------+------------+-------------+------------------+------+--------+
 
 
 
@@ -1308,3 +1461,34 @@ swift中没有`glance`这个container，可以手动创建，也可以修改配�
 在不使用nova的情况下，确认`/etc/cinder/cinder.conf`
 
 	rabbit_virtual_host=/
+	
+## [nova-compute] ImportError: No module named libvirt
+
+	apt-get install python-libvirt
+
+## [nova-api] Address already in use
+
+先确定是否已经有`nova-api`进程在运行
+
+	ps -ef | grep nova
+	
+如果没有，杀掉占用`8777`的进程
+
+	netstat -apn | grep 8777
+	
+## [nova image-list] ERROR: printt
+
+`novaclient`代码有bug，修改`/usr/lib/python2.7/dist-packages/novaclient/utils.py`
+
+	def print_list(objs, fields, formatters={}):
+	    //此处省略N行
+	    print pt.get_string(sortby=fields[0])
+        #pt.printt(sortby=fields[0])
+        
+安装`novnc`会作为依赖安装`novaclient`包，如果比较早的版本可能会有问题，用如下方式安装
+
+	apt-get download novnc
+	dpkg --force-all -i novnc_*.deb
+        
+## [nova image-list] ERROR: Unauthorized (HTTP 401)
+
