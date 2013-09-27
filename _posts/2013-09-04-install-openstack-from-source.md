@@ -1,4 +1,3 @@
-
 # 声明
 
 # 安装
@@ -985,7 +984,8 @@ To distribute the partitions across the drives in the ring
 	
 如果支持KVM，就会显示
 
-	INFO: /dev/kvm exists	KVM acceleration can be used
+	INFO: /dev/kvm exists
+	KVM acceleration can be used
 
 如果不支持
 
@@ -998,7 +998,8 @@ To distribute the partitions across the drives in the ring
 
 修改配置`/etc/nova/nova.conf`
 
-	￼compute_driver=libvirt.LibvirtDriver	libvirt_type=qemu
+	￼compute_driver=libvirt.LibvirtDriver
+	libvirt_type=qemu
 
 安装相关包
 
@@ -1180,7 +1181,9 @@ To distribute the partitions across the drives in the ring
 
 	nova-manage db sync
 	
-###启动服务	# controller node
+###启动服务
+
+	# controller node
 	nova-api &
 	nova-conductor &
 	nova-network &
@@ -1491,4 +1494,10 @@ swift中没有`glance`这个container，可以手动创建，也可以修改配�
 	dpkg --force-all -i novnc_*.deb
         
 ## [nova image-list] ERROR: Unauthorized (HTTP 401)
+修改`/etc/nova/api-paste.ini`
+
+	[filter:authtoken]
+	admin_tenant_name = admin
+	admin_user = admin
+	admin_password = 123456
 
