@@ -1494,6 +1494,7 @@ swift中没有`glance`这个container，可以手动创建，也可以修改配�
 	dpkg --force-all -i novnc_*.deb
         
 ## [nova image-list] ERROR: Unauthorized (HTTP 401)
+
 修改`/etc/nova/api-paste.ini`
 
 	[filter:authtoken]
