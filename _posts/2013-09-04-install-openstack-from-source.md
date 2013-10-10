@@ -1502,3 +1502,6 @@ swift中没有`glance`这个container，可以手动创建，也可以修改配�
 	admin_user = admin
 	admin_password = 123456
 
+## [nova net-list] ERROR: HTTPConnectionPool(host='10.0.2.15', port=8774): Max retries exceeded with url: /v2/dd3d73c9f6e64acca28376d9bad0fc58/os-tenant-networks (Caused by <class 'socket.error'>: [Errno 111] Connection refused)
+
+使用`devstack`在虚拟机安装后，执行`nova net-list`报错，执行`netstat`查看`8774`端口没有被监听，然后发现`nova-api`没有起来，手动启动后报错`OSError: [Errno 12] Cannot allocate memory`，当前虚拟及内存只分配了1G，扩大到2G后正常。
