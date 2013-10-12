@@ -50,7 +50,7 @@
 	
 安装一些基本工具
 
-	apt-get install vim build-essential git python-dev python-setuptools python-pip libxml2-dev libxslt-dev
+	apt-get install vim build-essential git python-dev python-setuptools python-pip libxml2-dev libxslt-dev curl
 	
 附：当工作未完成且需要关机时，先“保存状态后关闭”，以后再“从保存状态启动”
 
@@ -73,6 +73,7 @@
 
 获取源码
 
+	# commit 8ba9898f4271ed61b3080ec479b43e6fc1984345
 	git clone git://github.com/openstack/keystone.git
 	
 安装依赖
@@ -118,9 +119,9 @@
 
 	keystone-manage pki_setup --keystone-user=root --keystone-group=root
 	
-启动keystone服务
+启动keystone服务(加上`-d`参数可查看debug信息)
 
-	keystone-all -d &
+	keystone-all &
 	
 设置环境变量（目前还没有账户，只能先使用`admin_token`方式验证）
 
@@ -149,7 +150,7 @@
 	+----------------------------------+-----------+----------------------------+----------------------------+-----------------------------+----------------------------------+
 	|                id                |   region  |         publicurl          |        internalurl         |           adminurl          |            service_id            |
 	+----------------------------------+-----------+----------------------------+----------------------------+-----------------------------+----------------------------------+
-	| d28d840d4be74a778578953a1a13324f | RegionOne | http://127.0.0.1:5000/v2.0 | http://127.0.0.1:5000/v2.0 | http://127.0.0.1:35357/v2.0 | 714af530900840ef88106765f13f1921 |
+	| d28d840d4be74a778578953a1a13324f | regionOne | http://127.0.0.1:5000/v2.0 | http://127.0.0.1:5000/v2.0 | http://127.0.0.1:35357/v2.0 | 714af530900840ef88106765f13f1921 |
 	+----------------------------------+-----------+----------------------------+----------------------------+-----------------------------+----------------------------------+
 	
 ### 创建管理员（admin）账户
@@ -280,6 +281,7 @@
 
 获取源码
 
+	# commit 5964082b2cd7aa2db6bcd112a5d33939e0f68bd9
 	git clone git://github.com/openstack/swift.git
 
 安装依赖
@@ -298,6 +300,7 @@
 
 Ring File包含存储设备的所有信息 （each ring will contain 2^12=4096 partitions）
 
+	mkdir -pv /etc/swift
 	swift-ring-builder /etc/swift/account.builder create 12 3 1
 	swift-ring-builder /etc/swift/container.builder create 12 3 1
 	swift-ring-builder /etc/swift/object.builder create 12 3 1
@@ -338,8 +341,6 @@ To distribute the partitions across the drives in the ring
 	
 为swift创建HashKey (使用`openssl rand -hex 10`生成随机串`0b1b9109c1ddde4f9c4b`)
 
-	mkdir -p /etc/swift
-	
 	cat > /etc/swift/swift.conf << EOF
 	[swift-hash]
 	swift_hash_path_suffix = 0b1b9109c1ddde4f9c4b
@@ -492,7 +493,7 @@ To distribute the partitions across the drives in the ring
 	|                id                |   region  |                  publicurl                  |                 internalurl                 |                   adminurl                  |            service_id            |
 	+----------------------------------+-----------+---------------------------------------------+---------------------------------------------+---------------------------------------------+----------------------------------+
 	| 20f2279d7b2345c38f5315ac4518f1ea | regionOne | http://127.0.0.1:8080/v2/AUTH_$(tenant_id)s | http://127.0.0.1:8080/v2/AUTH_$(tenant_id)s | http://127.0.0.1:8080/v2/AUTH_$(tenant_id)s | c09efaf486e54266b328cad0a52752c2 |
-	| d28d840d4be74a778578953a1a13324f | RegionOne |          http://127.0.0.1:5000/v2.0         |          http://127.0.0.1:5000/v2.0         |         http://127.0.0.1:35357/v2.0         | 714af530900840ef88106765f13f1921 |
+	| d28d840d4be74a778578953a1a13324f | regionOne |          http://127.0.0.1:5000/v2.0         |          http://127.0.0.1:5000/v2.0         |         http://127.0.0.1:35357/v2.0         | 714af530900840ef88106765f13f1921 |
 	+----------------------------------+-----------+---------------------------------------------+---------------------------------------------+---------------------------------------------+----------------------------------+
 	
 ###配置Swift Storage Nodes
@@ -606,7 +607,7 @@ To distribute the partitions across the drives in the ring
     use = egg:swift#catch_errors
     EOF
 
-创建和挂载loopback设备（注意：重启后挂载失效）
+创建和挂载loopback设备（注意：系统重启后挂载失效）
 
 	for zone in 1 2 3 ; do
 		for device in 1 2 ; do
@@ -652,20 +653,22 @@ To distribute the partitions across the drives in the ring
 
 获取源码
 
+	# commit e3328089ef8b99b6ecf66bb2e07aec59388d4afd
 	git clone git://github.com/openstack/glance.git
+
+	# commit cd11833cffa306516704e871fad23699e21339f3
+	git clone git://github.com/openstack/python-glanceclient.git 
 	
-安装依赖
+安装
 
 	cd glance
 	pip install -r requirements.txt
-	
-安装Glance到系统
-
 	python setup.py install
-	
-安装客户端
 
-	pip install python-glanceclient
+        cd ../python-glanceclient
+	pip install -r requirements.txt
+	python setup.py install
+	cd ..
 	
 创建数据库
 
@@ -683,6 +686,8 @@ To distribute the partitions across the drives in the ring
 	[DEFAULT]
 	# default_store = file
 	default_store = swift
+	
+	sql_connection = mysql://root:111111@127.0.0.1/glance
 
 	swift_store_auth_address = http://127.0.0.1:35357/v2.0/
 	swift_store_user = admin:admin
@@ -742,10 +747,10 @@ To distribute the partitions across the drives in the ring
 	|  service_id | c9f6e93cfd384a27bdac595be296ad4a |
 	+-------------+----------------------------------+
 
-启动服务（运行每个服务都需要开一个终端，然后`vagrant ssh`登陆）
+启动服务
 
-	glance-api --config-file /etc/glance/glance-api.conf
-	glance-registry --config-file /etc/glance/glance-registry.conf
+	glance-api --config-file /etc/glance/glance-api.conf &
+	glance-registry --config-file /etc/glance/glance-registry.conf &
 
 测试一下
 
@@ -787,7 +792,10 @@ To distribute the partitions across the drives in the ring
 
 获取源码
 
+	# commit 3da3a0e827ff0e099514702d7116084245f03e80
 	git clone https://github.com/openstack/cinder.git
+
+	# commit 728a3419c9321f057b2a5e48b77281dc37487150
 	git clone https://github.com/openstack/python-cinderclient.git
 
 安装
@@ -799,6 +807,7 @@ To distribute the partitions across the drives in the ring
 	cd ../python-cinderclient/
 	pip install -r requirements.txt
 	python setup.py  install
+	cd ..
 	
 	apt-get install tgt open-iscsi rabbitmq-server
 	
@@ -810,16 +819,12 @@ To distribute the partitions across the drives in the ring
 修改`/etc/cinder/api-paste.ini`
 
 	[filter:authtoken]
-	paste.filter_factory = keystoneclient.middleware.auth_token:filter_factory
-	service_protocol = http
-	service_host = 127.0.0.1
-	service_port = 5000
-	auth_host = 127.0.0.1
-	auth_port = 35357
-	auth_protocol = http
 	admin_tenant_name = admin
 	admin_user = admin
 	admin_password = 123456
+	service_protocol = http
+	service_host = 127.0.0.1
+	service_port = 5000
 
 修改`/etc/cinder/cinder.conf`
 
@@ -828,6 +833,9 @@ To distribute the partitions across the drives in the ring
 	sql_connection=mysql://root:111111@127.0.0.1/cinder
 	api_paste_config=/etc/cinder/api-paste.ini
 	
+	state_path=/var/lib/cinder
+	volumes_dir=$state_path/volumes
+
 	iscsi_helper=tgtadm
 	volume_name_template=volume-%s
 	volume_group=cinder-volumes
@@ -862,18 +870,19 @@ To distribute the partitions across the drives in the ring
 
 初始化数据库
 
+	mkdir -p /var/log/cinder
 	cinder-manage db sync
 	
 创建卷
 
 	dd if=/dev/zero of=~/cinder-volumes bs=1 count=0 seek=2G
-	losetup /dev/loop2 ~/cinder-volumes
-	pvcreate /dev/loop2
-	vgcreate cinder-volumes /dev/loop2
+	losetup /dev/loop6 ~/cinder-volumes
+	pvcreate /dev/loop6
+	vgcreate cinder-volumes /dev/loop6
 	
 	$ pvscan
 	PV /dev/sda5    VG precise64        lvm2 [79.76 GiB / 0    free]
-	PV /dev/loop2   VG cinder-volumes   lvm2 [2.00 GiB / 2.00 GiB free]
+	PV /dev/loop6   VG cinder-volumes   lvm2 [2.00 GiB / 2.00 GiB free]
 	Total: 2 [81.75 GiB] / in use: 2 [81.75 GiB] / in no VG: 0 [0   ]
 
 启动服务
@@ -1433,6 +1442,12 @@ swift中没有`glance`这个container，可以手动创建，也可以修改配�
 	swift_store_user = admin:admin
 	swift_store_key = 123456
 
+## [glance image-list] HTTPInternalServerError (HTTP 500)
+
+- 确认安装`curl`。加上`-d`参数，可看到执行了`curl`命令，手动执行后报错`The program 'curl' is currently not installed.`
+- 确认`glance db_sync`执行成功。查看数据库`glance`，发现没有表，检查`glance-*.conf`的`sql-connection`配置
+- 确认`glance-api.conf`文件中的`swift_store_auth_address = http://127.0.0.1:35357/v2.0/`是`http`
+
 ## [nova, pvcreate /dev/loop2] Device /dev/loop2 not found (or ignored by filtering)
 
 可能是修改了`/etc/lvm/lvm.conf`中的`filter`造成的
@@ -1458,6 +1473,13 @@ swift中没有`glance`这个container，可以手动创建，也可以修改配�
 	+--------------------------------------+----------+--------------+------+-------------+----------+-------------+
 
 首先确定数据库`cinder`中是否有表，即确保`cinder-manage db sync`执行成功
+
+## [cinder create] `Status`是`error`，`cinder-volume`报错：`Exit code: 5`
+
+确定配置文件`/etc/cinder/cinder.conf`包含如下内容
+
+	state_path=/var/lib/cinder
+	volumes_dir=$state_path/volumes
 	
 ## [cinder-volume] AMQP server on localhost:5672 is unreachable
 
@@ -1505,3 +1527,4 @@ swift中没有`glance`这个container，可以手动创建，也可以修改配�
 ## [nova net-list] ERROR: HTTPConnectionPool(host='10.0.2.15', port=8774): Max retries exceeded with url: /v2/dd3d73c9f6e64acca28376d9bad0fc58/os-tenant-networks (Caused by <class 'socket.error'>: [Errno 111] Connection refused)
 
 使用`devstack`在虚拟机安装后，执行`nova net-list`报错，执行`netstat`查看`8774`端口没有被监听，然后发现`nova-api`没有起来，手动启动后报错`OSError: [Errno 12] Cannot allocate memory`，当前虚拟及内存只分配了1G，扩大到2G后正常。
+
