@@ -665,7 +665,7 @@ To distribute the partitions across the drives in the ring
 	pip install -r requirements.txt
 	python setup.py install
 
-        cd ../python-glanceclient
+	cd ../python-glanceclient
 	pip install -r requirements.txt
 	python setup.py install
 	cd ..
@@ -679,7 +679,7 @@ To distribute the partitions across the drives in the ring
 复制配置文件
 
 	mkdir -p /etc/glance
-	cp etc/* /etc/glance/
+	cp glance/etc/* /etc/glance/
 
 修改`/etc/glance/glance-api.conf`
 	
@@ -764,20 +764,19 @@ To distribute the partitions across the drives in the ring
 
 增加image
 
-	head -c 1024 /dev/urandom > ~/image.file
+	wget http://download.cirros-cloud.net/0.3.1/cirros-0.3.1-x86_64-disk.img
+	glance image-create --name="Cirros 0.3.1" \
+		--disk-format=qcow2 \
+		--container-format bare < cirros-0.3.1-x86_64-disk.img
 
-	$ glance add name="test image" is_public=true disk_format=aki \
-	container_format=aki < ~/image.file
-	Added new image with ID: 32672784-6813-48c2-8c09-7ec99dd2c4a6
-	
 查看一下
 
-	glance image-list
-	+--------------------------------------+------------+-------------+------------------+------+--------+
-	| ID                                   | Name       | Disk Format | Container Format | Size | Status |
-	+--------------------------------------+------------+-------------+------------------+------+--------+
-	| 1a736b75-3e49-4fed-97f1-f3257a75b3b8 | test image | aki         | aki              | 1024 | active |
-	+--------------------------------------+------------+-------------+------------------+------+--------+
+	$ glance image-list
+	+--------------------------------------+--------------+-------------+------------------+----------+--------+
+	| ID                                   | Name         | Disk Format | Container Format | Size     | Status |
+	+--------------------------------------+--------------+-------------+------------------+----------+--------+
+	| 5ef6d78b-dd3e-4575-ad52-692552f3ddd3 | Cirros 0.3.1 | qcow2       | bare             | 13147648 | active |
+	+--------------------------------------+--------------+-------------+------------------+----------+--------+
 
 	$ swift list
 	c1
@@ -785,7 +784,7 @@ To distribute the partitions across the drives in the ring
 	glance
 
 	$ swift list glance
-	1a736b75-3e49-4fed-97f1-f3257a75b3b8
+	5ef6d78b-dd3e-4575-ad52-692552f3ddd3
 
 
 ##安装Cinder
@@ -813,7 +812,7 @@ To distribute the partitions across the drives in the ring
 	
 安装配置
 
-	cp -af etc/cinder /etc
+	cp -af cinder/etc/cinder /etc
 	cp /etc/cinder/cinder.conf.sample /etc/cinder/cinder.conf
 	
 修改`/etc/cinder/api-paste.ini`
@@ -887,9 +886,9 @@ To distribute the partitions across the drives in the ring
 
 启动服务
 
-	cinder-volume --config-file=/etc/cinder/cinder.conf
-	cinder-api --config-file=/etc/cinder/cinder.conf
-	cinder-scheduler --config-file=/etc/cinder/cinder.conf
+	cinder-volume --config-file=/etc/cinder/cinder.conf &
+	cinder-api --config-file=/etc/cinder/cinder.conf &
+	cinder-scheduler --config-file=/etc/cinder/cinder.conf &
 
 创建`service`和`endpoint`
 
