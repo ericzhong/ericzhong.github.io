@@ -959,6 +959,7 @@ To distribute the partitions across the drives in the ring
 
 	git clone git://github.com/openstack/nova.git
 	git clone https://github.com/openstack/python-novaclient.git
+	git clone https://github.com/kanaka/noVNC.git
 	
 安装源码
 
@@ -971,107 +972,15 @@ To distribute the partitions across the drives in the ring
 	pip install -r requirements.txt
 	python setup.py  install
 	cd ..
-	
-	
-安装依赖（直接安装novnc会作为依赖安装比较早的novaclient包，可能导致错误）
 
-	apt-get install python-libvirt
-	
-	apt-get download novnc
-	dpkg --force-all -i novnc_*.deb
+安装依赖
+
+	apt-get install python-libvirt guestmount bridge-utils
 
 安装配置文件
 
 	cp -af  nova/etc/nova /etc
 	cp /etc/nova/nova.conf.sample /etc/nova/nova.conf
-
-检查VT-X支持
-
-	apt-get install cpu-checker
-	kvm-ok
-	
-如果支持KVM，就会显示
-
-	INFO: /dev/kvm exists
-	KVM acceleration can be used
-
-如果不支持
-
-	INFO: Your CPU does not support KVM extensions
-	KVM acceleration can NOT be used
-	
-我的虚机系统显示不支持，不能使用默认的KVM，所以就用QEMU测试
-
-###QEMU
-
-修改配置`/etc/nova/nova.conf`
-
-	￼compute_driver=libvirt.LibvirtDriver
-	libvirt_type=qemu
-
-安装相关包
-
-	apt-get install guestmount
-	
-###预配网络
-
-将网卡设为`promiscuous mode`
-
-	ip link set eth0 promisc on
-	
-修改网卡配置`/etc/network/interface`
-
-	# The loopback network interface
-	auto lo
-	iface lo inet loopback
-
-	# The primary network interface
-	auto eth0
-	iface eth0 inet dhcp
-
-	# Bridge network interface for VM networks
-	auto br100
-	iface br100 inet static
-	address 192.168.100.1
-	netmask 255.255.255.0
-	bridge_stp off
-	bridge_fd 0
-
-增加桥接设备（取名`br100`）
-
-	apt-get install bridge-utils
-	brctl addbr br100
-	/etc/init.d/networking restart
-
-检查一下
-
-	$ ifconfig
-	br100	Link encap:Ethernet  HWaddr 46:4c:e1:8e:79:73  
-			inet addr:192.168.100.1  Bcast:192.168.100.255  Mask:255.255.255.0
-			inet6 addr: fe80::444c:e1ff:fe8e:7973/64 Scope:Link
-			UP BROADCAST RUNNING MULTICAST  MTU:1500  Metric:1
-			RX packets:0 errors:0 dropped:0 overruns:0 frame:0
-			TX packets:13 errors:0 dropped:0 overruns:0 carrier:0
-			collisions:0 txqueuelen:0 
-			RX bytes:0 (0.0 B)  TX bytes:1022 (1.0 KB)
-
-	eth0	Link encap:Ethernet  HWaddr 08:00:27:88:0c:a6  
-			inet addr:10.0.2.15  Bcast:10.0.2.255  Mask:255.255.255.0
-			inet6 addr: fe80::a00:27ff:fe88:ca6/64 Scope:Link
-			UP BROADCAST RUNNING PROMISC MULTICAST  MTU:1500  Metric:1
-			RX packets:125943 errors:0 dropped:0 overruns:0 frame:0
-			TX packets:65909 errors:0 dropped:0 overruns:0 carrier:0
-			collisions:0 txqueuelen:1000 
-			RX bytes:101091933 (101.0 MB)  TX bytes:3925291 (3.9 MB)
-
-	lo		Link encap:Local Loopback  
-			inet addr:127.0.0.1  Mask:255.0.0.0
-			inet6 addr: ::1/128 Scope:Host
-			UP LOOPBACK RUNNING  MTU:16436  Metric:1
-			RX packets:0 errors:0 dropped:0 overruns:0 frame:0
-			TX packets:0 errors:0 dropped:0 overruns:0 carrier:0
-			collisions:0 txqueuelen:0 
-			RX bytes:0 (0.0 B)  TX bytes:0 (0.0 B)
 	
 ###配置数据库
 
@@ -1080,18 +989,6 @@ To distribute the partitions across the drives in the ring
 	mysql -u root -p
 	create database nova;
 	quit
-
-/*
-###配置Cinder
-
-修改`/etc/cinder/cinder.conf`
-
-	rabbit_virtual_host = /
-
-修改`/etc/nova/nova.conf`
-
-	volume_api_class=nova.volume.cinder.API
-*/
 
 ###配置Nova
 
@@ -1148,7 +1045,7 @@ To distribute the partitions across the drives in the ring
 	network_manager=nova.network.manager.FlatDHCPManager
 	force_dhcp_release=True
 	dhcpbridge_flagfile=/etc/nova/nova.conf
-	#firewall_driver=nova.virt.libvirt.firewall.IptablesFirewallDriver
+	firewall_driver=nova.virt.libvirt.firewall.IptablesFirewallDriver
 	# Change my_ip to match each host
 	my_ip=127.0.0.1
 	public_interface=eth0
@@ -1156,6 +1053,7 @@ To distribute the partitions across the drives in the ring
 	flat_network_bridge=br100
 	flat_interface=eth0
 	fixed_range=192.168.100.0/24
+	use_ipv6=false
 
 	# NOVNC CONSOLE
 	novncproxy_base_url=http://127.0.0.1:6080/vnc_auto.html
@@ -1183,7 +1081,8 @@ To distribute the partitions across the drives in the ring
 
 创建相应目录
 
-	mkdir /var/log/nova
+	mkdir -p /var/log/nova
+	mkdir -p /var/lib/nova/instances
 
 ###初始化数据库
 
@@ -1192,31 +1091,55 @@ To distribute the partitions across the drives in the ring
 ###启动服务
 
 	# controller node
-	nova-api &
-	nova-conductor &
-	nova-network &
-	nova-scheduler &
-	nova-novncproxy &
+	nova-api
+	nova-conductor
+	nova-network
+	nova-scheduler
+	noVNC/utils/nova-novncproxy --config-file /etc/nova/nova.conf --web `pwd`/noVNC/
 
 	# compute node
-	nova-compute &
-	#nova-network &
+	nova-compute
+	#nova-network
 
-###创建虚机使用的网络
+###创建Endpoint
 
-	nova-manage network create private --fixed_range_v4=192.168.100.0/24 --bridge_interface=br100
+	keystone service-create --name=nova --type=compute --description="Nova Compute Service"
+	+-------------+----------------------------------+
+	|   Property  |              Value               |
+	+-------------+----------------------------------+
+	| description |       Nova Compute Service       |
+	|      id     | e8f13ca5e3de451887059358cce1071a |
+	|     name    |               nova               |
+	|     type    |             compute              |
+	+-------------+----------------------------------+
+		
+	keystone endpoint-create \
+		--service-id=e8f13ca5e3de451887059358cce1071a \
+		--publicurl='http://localhost:8774/v2/%(tenant_id)s' \
+		--internalurl='http://localhost:8774/v2/%(tenant_id)s' \
+		--adminurl='http://localhost:8774/v2/%(tenant_id)s'
+	+-------------+----------------------------------------+
+	|   Property  |                 Value                  |
+	+-------------+----------------------------------------+
+	|   adminurl  | http://localhost:8774/v2/%(tenant_id)s |
+	|      id     |    30c72b9d0d794fa79201bbdd2aa10fa8    |
+	| internalurl | http://localhost:8774/v2/%(tenant_id)s |
+	|  publicurl  | http://localhost:8774/v2/%(tenant_id)s |
+	|    region   |               regionOne                |
+	|  service_id |    e8f13ca5e3de451887059358cce1071a    |
+	+-------------+----------------------------------------+
 	
 ###验证一下
 
 	$ nova-manage service list
 	Binary           Host                                 Zone             Status     State Updated_At
-	nova-conductor   precise64                            internal         enabled    :-)   2013-09-24 16:21:53
-	nova-network     precise64                            internal         enabled    :-)   2013-09-24 16:21:53
-	nova-scheduler   precise64                            internal         enabled    :-)   2013-09-24 16:21:56
-	nova-compute     precise64                            nova             enabled    :-)   2013-09-24 16:21:51
+	nova-conductor   precise64                            internal         enabled    :-)   2013-10-17 15:52:40
+	nova-network     precise64                            internal         enabled    :-)   2013-10-17 15:52:47
+	nova-scheduler   precise64                            internal         enabled    :-)   2013-10-17 15:52:43
+	nova-compute     precise64                            nova             enabled    :-)   2013-10-17 15:52:49
 
 	$ nova-manage version
-	2013.2
+	2014.1
 
 `nova image-list`输出结果应该和`glance image-list`相同
 
@@ -1234,7 +1157,203 @@ To distribute the partitions across the drives in the ring
 	| 1a736b75-3e49-4fed-97f1-f3257a75b3b8 | test image | aki         | aki              | 1024 | active |
 	+--------------------------------------+------------+-------------+------------------+------+--------+
 
+###配置网络
 
+将网卡设为`promiscuous mode`
+
+	ip link set eth0 promisc on
+	
+修改网卡配置`/etc/network/interfaces`
+
+	# The loopback network interface
+	auto lo
+	iface lo inet loopback
+
+	# The primary network interface
+	auto eth0
+	iface eth0 inet dhcp
+
+	# Bridge network interface for VM networks
+	auto br100
+	iface br100 inet static
+	address 192.168.100.1
+	netmask 255.255.255.0
+	bridge_stp off
+	bridge_fd 0
+
+增加桥接设备（取名`br100`）
+
+	brctl addbr br100
+	/etc/init.d/networking restart
+
+检查一下
+
+	$ ifconfig
+        br100     Link encap:Ethernet  HWaddr 36:31:ff:07:28:7b
+                  inet addr:192.168.100.1  Bcast:192.168.100.255  Mask:255.255.255.0
+                  inet6 addr: fe80::3431:ffff:fe07:287b/64 Scope:Link
+                  UP BROADCAST RUNNING MULTICAST  MTU:1500  Metric:1
+                  RX packets:0 errors:0 dropped:0 overruns:0 frame:0
+                  TX packets:9 errors:0 dropped:0 overruns:0 carrier:0
+                  collisions:0 txqueuelen:0
+                  RX bytes:0 (0.0 B)  TX bytes:706 (706.0 B)
+
+        eth0      Link encap:Ethernet  HWaddr 08:00:27:88:0c:a6
+                  inet addr:10.0.2.15  Bcast:10.0.2.255  Mask:255.255.255.0
+                  inet6 addr: fe80::a00:27ff:fe88:ca6/64 Scope:Link
+                  UP BROADCAST RUNNING PROMISC MULTICAST  MTU:1500  Metric:1
+                  RX packets:677269 errors:0 dropped:0 overruns:0 frame:0
+                  TX packets:361734 errors:0 dropped:0 overruns:0 carrier:0
+                  collisions:0 txqueuelen:1000
+                  RX bytes:524297575 (524.2 MB)  TX bytes:25305754 (25.3 MB)
+
+        lo        Link encap:Local Loopback
+                  inet addr:127.0.0.1  Mask:255.0.0.0
+                  inet6 addr: ::1/128 Scope:Host
+                  UP LOOPBACK RUNNING  MTU:16436  Metric:1
+                  RX packets:270140 errors:0 dropped:0 overruns:0 frame:0
+                  TX packets:270140 errors:0 dropped:0 overruns:0 carrier:0
+                  collisions:0 txqueuelen:0
+                  RX bytes:105663149 (105.6 MB)  TX bytes:105663149 (105.6 MB)
+
+        virbr0    Link encap:Ethernet  HWaddr 32:d5:7b:ce:e5:b0
+                  inet addr:192.168.122.1  Bcast:192.168.122.255  Mask:255.255.255.0
+                  UP BROADCAST MULTICAST  MTU:1500  Metric:1
+                  RX packets:0 errors:0 dropped:0 overruns:0 frame:0
+                  TX packets:0 errors:0 dropped:0 overruns:0 carrier:0
+                  collisions:0 txqueuelen:0
+                  RX bytes:0 (0.0 B)  TX bytes:0 (0.0 B)
+
+
+###创建虚机使用的网络
+
+	nova-manage network create private --fixed_range_v4=192.168.100.0/24 --bridge_interface=br100
+
+###打开访问限制
+
+查看安全分组
+
+	$ nova secgroup-list
+	+----+---------+-------------+
+	| Id | Name    | Description |
+	+----+---------+-------------+
+	| 1  | default | default     |
+	+----+---------+-------------+
+	
+放开SSH和ICMP（Ping）访问
+	
+	$ nova secgroup-add-rule default tcp 22 22 0.0.0.0/0
+	$ nova secgroup-add-rule default icmp -1 -1 0.0.0.0/0
+	$ nova secgroup-list-rules
+
+注入SSH公钥到虚机并确认（需要虚机Image支持）
+
+	$ ssh-keygen -t rsa       # 一路回车
+	$ nova keypair-add --pub-key ~/.ssh/id_rsa.pub mykey
+	
+	$ nova keypair-list
+	$ ssh-keygen -l -f ~/.ssh/id_rsa.pub
+
+###打开`ip_v4`转发
+
+先看看是否已经打开
+
+	$ sysctl net.ipv4.ip_forward
+	net.ipv4.ip_forward = 0
+	
+临时开启
+
+	$ sysctl -w net.ipv4.ip_forward=1
+
+永久开启，先编辑`/etc/sysctl.conf`
+
+	net.ipv4.ip_forward = 1
+
+再重启服务
+
+	/etc/init.d/procps.sh restart	
+	
+
+### 运行虚机实例
+
+先确认所有服务都在运行(`libvirtd`,`nova-api`,`nova-scheduler`,`nova-compute`,`nova-network`)
+
+	$ ps -ef | grep libvirt
+	root     19970     1  0 14:04 ?        00:00:05 /usr/sbin/libvirtd -d
+
+	$ nova-manage service list
+	Binary           Host                                 Zone             Status     State Updated_At
+	nova-conductor   precise64                            internal         enabled    :-)   2013-10-17 15:52:40
+	nova-network     precise64                            internal         enabled    :-)   2013-10-17 15:52:47
+	nova-scheduler   precise64                            internal         enabled    :-)   2013-10-17 15:52:43
+	nova-compute     precise64                            nova             enabled    :-)   2013-10-17 15:52:49
+
+启动实例
+
+	$ nova secgroup-list
+	+----+---------+-------------+
+	| Id | Name    | Description |
+	+----+---------+-------------+
+	| 1  | default | default     |
+	+----+---------+-------------+
+
+	$ nova flavor-list 
+	+----+-----------+-----------+------+-----------+------+-------+-------------+-----------+
+	| ID | Name      | Memory_MB | Disk | Ephemeral | Swap | VCPUs | RXTX_Factor | Is_Public |
+	+----+-----------+-----------+------+-----------+------+-------+-------------+-----------+
+	| 1  | m1.tiny   | 512       | 1    | 0         |      | 1     | 1.0         | True      |
+	| 2  | m1.small  | 2048      | 20   | 0         |      | 1     | 1.0         | True      |
+	| 3  | m1.medium | 4096      | 40   | 0         |      | 2     | 1.0         | True      |
+	| 4  | m1.large  | 8192      | 80   | 0         |      | 4     | 1.0         | True      |
+	| 5  | m1.xlarge | 16384     | 160  | 0         |      | 8     | 1.0         | True      |
+	+----+-----------+-----------+------+-----------+------+-------+-------------+-----------+
+
+	$ nova image-list
+	+--------------------------------------+--------------+--------+--------+
+	| ID                                   | Name         | Status | Server |
+	+--------------------------------------+--------------+--------+--------+
+	| 5ef6d78b-dd3e-4575-ad52-692552f3ddd3 | Cirros 0.3.1 | ACTIVE |        |
+	+--------------------------------------+--------------+--------+--------+
+
+	$ nova boot --flavor 1 --image 5ef6d78b-dd3e-4575-ad52-692552f3ddd3 --security_group default cirros
+
+查看实例状态(启动需要一些时间)
+
+	$ nova list	
+	+--------------------------------------+--------+--------+------------+-------------+-----------------------+
+	| ID                                   | Name   | Status | Task State | Power State | Networks              |
+	+--------------------------------------+--------+--------+------------+-------------+-----------------------+
+	| 2c0c5c9b-2511-4616-8186-3843b0800da1 | cirros | BUILD  | spawning   | NOSTATE     | private=192.168.100.2 |
+	+--------------------------------------+--------+--------+------------+-------------+-----------------------+
+	
+	$ nova list	
+	+--------------------------------------+--------+--------+------------+-------------+-----------------------+
+	| ID                                   | Name   | Status | Task State | Power State | Networks              |
+	+--------------------------------------+--------+--------+------------+-------------+-----------------------+
+	| 75de8560-585a-40d6-9653-6c08d6afee6e | cirros | ACTIVE | None       | Running     | private=192.168.100.2 |
+	+--------------------------------------+--------+--------+------------+-------------+-----------------------+
+
+查看引导信息
+
+	$ nova console-log cirros
+	...
+	Oct 17 10:02:00 cirros kern.info kernel: [    6.980753] ip_tables: (C) 2000-2006 Netfilter Core Team
+	Oct 17 10:02:13 cirros kern.debug kernel: [   19.977012] eth0: no IPv6 routers present
+	Oct 17 10:03:29 cirros authpriv.info dropbear[301]: Running in background
+	############ debug end   ##############
+	  ____               ____  ____
+	 / __/ __ ____ ____ / __ \/ __/
+	/ /__ / // __// __// /_/ /\ \ 
+	\___//_//_/  /_/   \____/___/ 
+	   http://cirros-cloud.net
+
+
+	login as 'cirros' user. default password: 'cubswin:)'. use 'sudo' for root.
+	cirros login: 
+
+虚机应该可以Ping通，然后SSH登陆（密码：`cubswin:)`），从虚机可以Ping通公网IP
+
+	ssh cirros@192.168.100.2
 
 
 
@@ -1527,3 +1646,13 @@ swift中没有`glance`这个container，可以手动创建，也可以修改配�
 
 使用`devstack`在虚拟机安装后，执行`nova net-list`报错，执行`netstat`查看`8774`端口没有被监听，然后发现`nova-api`没有起来，手动启动后报错`OSError: [Errno 12] Cannot allocate memory`，当前虚拟及内存只分配了1G，扩大到2G后正常。
 
+## [nova-compute] libvirtError: internal error Cannot find suitable emulator for x86_64
+
+	apt-get install guestmount
+	
+## [Ping] 虚机Ping不通
+
+* 确认打开SSH和ICMP访问限制
+* 确认打开ip_v4转发
+* 确认`nova.conf`配置`use_ipv6=false`
+* 参考链接：<https://ask.openstack.org/en/question/120/cantt-ping-my-vm-from-controller-node/>
