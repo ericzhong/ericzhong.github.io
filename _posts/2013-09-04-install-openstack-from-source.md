@@ -957,8 +957,13 @@ To distribute the partitions across the drives in the ring
 
 获取源码
 
+	# commit e0b5bde35a54c6855da3639582edc68afa43d5ee
 	git clone git://github.com/openstack/nova.git
+	
+	# commit 516586a6b8f48a912d9b3d090f2d0a95a267feb2
 	git clone https://github.com/openstack/python-novaclient.git
+	
+	# commit 142aa4583cd0ffa11e8ebc19a52f024f1ff1b235
 	git clone https://github.com/kanaka/noVNC.git
 	
 安装源码
