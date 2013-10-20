@@ -218,7 +218,7 @@
 	| 94d416d8ebf34d3e97e345afcc5a2283 | admin |   True  |       |
 	+----------------------------------+-------+---------+-------+
 
-### 创建用户账户
+### 创建用户账户 (可选)
 
 创建用户、角色、租户
 
@@ -290,7 +290,7 @@
 	pip install -r requirements.txt
 	apt-get install memcached
 	
-注：pip安装依赖时可能报错`error: ffi.h: No such file or directory`，见`Troubleshooting`部分
+> pip安装依赖时可能报错`error: ffi.h: No such file or directory`，见`Troubleshooting`部分
 	
 安装swift到系统
 
@@ -764,10 +764,10 @@ To distribute the partitions across the drives in the ring
 
 增加image
 
-	wget http://download.cirros-cloud.net/0.3.1/cirros-0.3.1-x86_64-disk.img
-	glance image-create --name="Cirros 0.3.1" \
+	wget https://launchpad.net/cirros/trunk/0.3.0/+download/cirros-0.3.0-x86_64-disk.img
+	glance image-create --name="Cirros 0.3.0" \
 		--disk-format=qcow2 \
-		--container-format bare < cirros-0.3.1-x86_64-disk.img
+		--container-format bare < cirros-0.3.0-x86_64-disk.img
 
 查看一下
 
@@ -775,7 +775,7 @@ To distribute the partitions across the drives in the ring
 	+--------------------------------------+--------------+-------------+------------------+----------+--------+
 	| ID                                   | Name         | Disk Format | Container Format | Size     | Status |
 	+--------------------------------------+--------------+-------------+------------------+----------+--------+
-	| 5ef6d78b-dd3e-4575-ad52-692552f3ddd3 | Cirros 0.3.1 | qcow2       | bare             | 13147648 | active |
+	| 5ef6d78b-dd3e-4575-ad52-692552f3ddd3 | Cirros 0.3.0 | qcow2       | bare             | 13147648 | active |
 	+--------------------------------------+--------------+-------------+------------------+----------+--------+
 
 	$ swift list
@@ -1246,6 +1246,9 @@ To distribute the partitions across the drives in the ring
 	$ nova secgroup-add-rule default icmp -1 -1 0.0.0.0/0
 	$ nova secgroup-list-rules
 
+> 配置22端口后`vagrant ssh`可能无法访问，可使用VirtualBox的界面登录
+> 然后可以根据需要安装图形界面，比如xfce: `apt-get install xubuntu-desktop; startx`
+
 注入SSH公钥到虚机并确认（需要虚机Image支持）
 
 	$ ssh-keygen -t rsa       # 一路回车
@@ -1271,7 +1274,7 @@ To distribute the partitions across the drives in the ring
 
 再重启服务
 
-	/etc/init.d/procps.sh restart	
+	/etc/init.d/procps restart	
 	
 
 ### 运行虚机实例
@@ -1312,7 +1315,7 @@ To distribute the partitions across the drives in the ring
 	+--------------------------------------+--------------+--------+--------+
 	| ID                                   | Name         | Status | Server |
 	+--------------------------------------+--------------+--------+--------+
-	| 5ef6d78b-dd3e-4575-ad52-692552f3ddd3 | Cirros 0.3.1 | ACTIVE |        |
+	| 5ef6d78b-dd3e-4575-ad52-692552f3ddd3 | Cirros 0.3.0 | ACTIVE |        |
 	+--------------------------------------+--------------+--------+--------+
 
 	$ nova boot --flavor 1 --image 5ef6d78b-dd3e-4575-ad52-692552f3ddd3 --security_group default cirros
@@ -1330,7 +1333,7 @@ To distribute the partitions across the drives in the ring
 	+--------------------------------------+--------+--------+------------+-------------+-----------------------+
 	| ID                                   | Name   | Status | Task State | Power State | Networks              |
 	+--------------------------------------+--------+--------+------------+-------------+-----------------------+
-	| 75de8560-585a-40d6-9653-6c08d6afee6e | cirros | ACTIVE | None       | Running     | private=192.168.100.2 |
+	| 2c0c5c9b-2511-4616-8186-3843b0800da1 | cirros | ACTIVE | None       | Running     | private=192.168.100.2 |
 	+--------------------------------------+--------+--------+------------+-------------+-----------------------+
 
 查看引导信息
@@ -1355,7 +1358,11 @@ To distribute the partitions across the drives in the ring
 
 	ssh cirros@192.168.100.2
 
+> 并非每次都能Ping通，可以不停的删除后再重建，有时Ping通后过会儿又不行了，尚不清楚原因
 
+如果要删除虚机，执行（貌似需要执行两次，第一次修改状态，第二次移除）
+
+	nova delete 2c0c5c9b-2511-4616-8186-3843b0800da1
 
 
 #Troubleshooting
