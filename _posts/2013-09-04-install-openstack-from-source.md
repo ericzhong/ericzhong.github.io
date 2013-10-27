@@ -1370,6 +1370,47 @@ To distribute the partitions across the drives in the ring
 	nova delete 2c0c5c9b-2511-4616-8186-3843b0800da1
 
 
+##安装Horizon
+
+获取源码
+
+	# commit 1f7d703730d62c5e3896661a76a9808ec765ae1a
+	git clone https://github.com/openstack/horizon.git
+
+安装
+
+	cd horizon
+	pip install -r requirements.txt
+	python setup.py install
+	cd ..
+
+创建配置文件
+
+	cd horizon/openstack_dashboard/local
+	cp local_settings.py.example local_settings.py
+	cd -
+	
+修改配置`local_settings.py`
+
+	OPENSTACK_HOST = "127.0.0.1"
+	OPENSTACK_KEYSTONE_DEFAULT_ROLE = "admin"
+
+启动
+
+	cd horizon
+	./manage.py runserver 0.0.0.0:8888
+
+> 随便找个未被占用的端口即可
+> 
+> 如果使用Vagrant，到Virtualbox的网络设置中加个端口映射即可从Host访问
+
+创建一个默认角色`Member`（否则“项目”页面的操作会报错）
+
+	keystone role-create --name Member
+
+
+
+
 #Troubleshooting
 
 ## Expecting an auth URL via either --os-auth-url or env[OS_AUTH_URL]
@@ -1668,3 +1709,9 @@ swift中没有`glance`这个container，可以手动创建，也可以修改配�
 * 确认打开ip_v4转发
 * 确认`nova.conf`配置`use_ipv6=false`
 * 参考链接：<https://ask.openstack.org/en/question/120/cantt-ping-my-vm-from-controller-node/>
+
+## [创建项目] NotFound: ***"Member"
+
+Horizon的“项目”页面点击“创建项目”按钮报错，因为缺少默认角色`Member`，创建即可
+
+	keystone role-create --name Member
