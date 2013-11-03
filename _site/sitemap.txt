@@ -1,0 +1,16 @@
+
+http://jiangle.name/about.html
+http://jiangle.name/archive.html
+http://jiangle.name/atom.xml
+http://jiangle.name/categories/
+http://jiangle.name/index.html
+http://jiangle.name/links.html
+http://jiangle.name/pages.html
+http://jiangle.name/sitemap.txt
+http://jiangle.name/tags.html
+
+http://jiangle.name/2013/10/22/wsgi
+http://jiangle.name/2013/10/18/ssh-with-key
+http://jiangle.name/2013/09/28/python-lib
+http://jiangle.name/2013/09/27/git
+http://jiangle.name/2013/09/04/install-openstack-from-source

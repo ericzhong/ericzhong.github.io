@@ -1,0 +1,285 @@
+
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en-us">
+  <head>
+    <meta http-equiv="content-type" content="text/html; charset=utf-8" />
+    <meta name="author" content="Eric Zhong" />
+    
+    <title>Python库</title>
+    
+    <link rel="shortcut icon" href="/favicon.ico">
+    <link href="/atom.xml" rel="alternate" title="" type="application/atom+xml" />
+    <link rel="stylesheet" href="/assets/themes/sext-v/css/style.css">
+    <link rel="stylesheet" href="/assets/themes/sext-v/css/github.css">
+    <link rel="stylesheet" href="/assets/themes/sext-v/css/fontawesome.css">
+    <!--[if IE 7]>
+    <link rel="stylesheet" href="/assets/themes/sext-v/css/fontawesome-ie7.css">
+    <![endif]-->
+    <script type="text/javascript" src="/assets/themes/sext-v/js/highlight.pack.js"></script>
+    <script type="text/javascript">
+      hljs.initHighlightingOnLoad();
+    </script>
+  </head>
+  <body>
+      <div id="main" role="main">
+        <header>
+          <div id="header">
+            <h1><a title="Eric Zhong" class="" href="/">Eric Zhong</a></h1>
+          </div>
+          <nav>
+            <span><a title="Archive" class="icon-list-ul" href="/archive.html"></a></span>
+            <span><a title="Tags" class="icon-tags" href="/tags.html"></a></span>
+            <span><a title="Blogroll" class="icon-link" href="/links.html"></a></span>
+            <span><a title="Subscribe" class="icon-rss" href="/atom.xml"></a></span>
+          </nav>
+        </header>
+        <div id="content">
+        
+<article>
+  <section class="title">
+    <h2>Python库 </h2>
+  </section>
+  <section class="meta">
+  <span class="time">
+    <time datetime="2013-09-28">2013-09-28</time>
+  </span>
+  
+  <span class="tags">
+    
+    <a href="/tags.html#python" title="python">#python</a>
+    
+  </span>
+  
+  </section>
+  <section class="post">
+  <h2>VirtualEnv</h2>
+
+<p>Install</p>
+
+<pre><code>sudo pip install virtualenv
+</code></pre>
+
+<p>Init Dir</p>
+
+<pre><code>cd DIR
+virtualenv .
+</code></pre>
+
+<p>Activate Env</p>
+
+<pre><code>source bin/activate
+which python
+</code></pre>
+
+<h2>PrettyTable</h2>
+
+<p>Install</p>
+
+<pre><code>pip install prettytable
+</code></pre>
+
+<p>Example Code</p>
+
+<pre><code>#!/usr/bin/python
+
+from prettytable import PrettyTable
+
+x = PrettyTable(["City name", "Area", "Population", "Annual Rainfall"])
+x.align["City name"] = "l" # Left align city names
+x.padding_width = 1 # One space between column edges and contents (default)
+x.add_row(["Adelaide",1295, 1158259, 600.5])
+x.add_row(["Brisbane",5905, 1857594, 1146.4])
+x.add_row(["Darwin", 112, 120900, 1714.7])
+x.add_row(["Hobart", 1357, 205556, 619.5])
+x.add_row(["Sydney", 2058, 4336374, 1214.8])
+x.add_row(["Melbourne", 1566, 3806092, 646.9])
+x.add_row(["Perth", 5386, 1554769, 869.4])
+print x
+</code></pre>
+
+<p>Example Output</p>
+
+<pre><code>+-----------+------+------------+-----------------+
+| City name | Area | Population | Annual Rainfall |
++-----------+------+------------+-----------------+
+| Adelaide  | 1295 |  1158259   |      600.5      |
+| Brisbane  | 5905 |  1857594   |      1146.4     |
+| Darwin    | 112  |   120900   |      1714.7     |
+| Hobart    | 1357 |   205556   |      619.5      |
+| Sydney    | 2058 |  4336374   |      1214.8     |
+| Melbourne | 1566 |  3806092   |      646.9      |
+| Perth     | 5386 |  1554769   |      869.4      |
++-----------+------+------------+-----------------+
+</code></pre>
+
+<h2>ArgParse</h2>
+
+<h3>术语</h3>
+
+<p>以<code>PROG [-h] [--foo FOO] [bar [bar …]]</code>为例</p>
+
+<ul>
+<li><code>option</code> - '--foo'</li>
+<li><code>attribute</code> - 'foo'</li>
+<li><code>optional arguments</code> - 'FOO'</li>
+<li><code>position arguments</code> - 'bar'</li>
+</ul>
+
+
+<h3>ArgumentParser()</h3>
+
+<pre><code>class argparse.ArgumentParser(prog=None, usage=None, description=None, epilog=None, parents=[], 
+                                formatter_class=argparse.HelpFormatter, prefix_chars='-', fromfile_prefix_chars=None,
+                                argument_default=None, conflict_handler='error', add_help=True)
+</code></pre>
+
+<ul>
+<li><code>prog</code> - 指定程序名称 (default: sys.argv[0])</li>
+<li><code>usage</code> - 指定Usage字符串 (default: 参数清单)</li>
+<li><code>description</code> - argument help之前的一段描述文字 (default: none)</li>
+<li><code>epilog</code> - argument help之后的一段描述文字 (default: none)</li>
+<li><code>parents</code> - 继承其它ArgumentParser对象的选项，可以多个（List）</li>
+<li><code>formatter_class</code> - 定制Help输出（通过几个可选的内置方法）</li>
+<li><code>prefix_chars</code> - 自定义optional arguments的前缀，可多个 (default: ‘-‘)</li>
+<li><code>fromfile_prefix_chars</code> - 当从指定文件读取参数，指定文件名时加的前缀 (default: None)</li>
+<li><code>argument_default</code> - 全局默认参数 (default: None)</li>
+<li><code>conflict_handler</code> - 是否解决重复定义冲突，可用于覆盖前面的定义 (usually unnecessary)</li>
+<li><code>add_help</code> - 是否显示“-h, --help  show this help message and exit” (default: True)</li>
+</ul>
+
+
+<h3>add_argument()</h3>
+
+<pre><code>ArgumentParser.add_argument(name or flags...[, action][, nargs][, const][, default][, type][, choices][, required][, help][, metavar][, dest])
+</code></pre>
+
+<ul>
+<li><code>name or flags</code> - 多个选项(-f, --foo)或者一个positional argument（多个写成List）</li>
+<li><code>action</code> - 对command-line arguments的处理
+
+<ul>
+<li><code>store</code> - （默认）保存参数值</li>
+<li><code>store_const</code> - 配合<code>const</code>参数使用，保存<code>const</code>指定的值</li>
+<li><code>store_true</code> or <code>store_false</code> - 当给出选项时保存为<code>true</code>or<code>false</code></li>
+<li><code>append</code> - 将同一个选项的多个参数保存到一个List里面</li>
+<li><code>append_const</code> - 同上，不过使用<code>const</code>参数指定的值</li>
+<li><code>count</code> - 计算选项重复次数</li>
+<li><code>help</code> - ？</li>
+<li><code>version</code> - 配合<code>version</code>参数自定义<code>--version</code>的输出</li>
+<li>自定义</li>
+</ul>
+</li>
+<li><code>nargs</code> - 可接受的参数数量
+
+<ul>
+<li>整数 - <code>nargs=2</code>表示可接受两个，比如<code>--foo a b</code> => <code>foo=['a', 'b']</code></li>
+<li><code>?</code> - 表示只接受一个参数，可配合<code>default</code>参数（没有给出该选项）和<code>const</code>参数（仅有该选项，但没有参数）使用</li>
+<li><code>*</code> - 将所有参数都整合到List里面，比如<code>a b --foo x y --bar 1 2</code> => <code>bar=['1', '2'], baz=['a', 'b'], foo=['x', 'y']</code></li>
+<li><code>+</code> - 同<code>*</code>，但必须至少给出一个参数，否则会报错</li>
+<li><code>argparse.REMAINDER</code> - 将剩下的所有参数和选项都整合到一个List里面</li>
+</ul>
+</li>
+<li><code>const</code> - 配合<code>action</code>和<code>nargs</code>使用（可用max,sum等内置函数）</li>
+<li><code>default</code> - 配合其它使用，当没有给出某选项时从<code>default</code>取值（可用max,sum等内置函数）</li>
+<li><code>type</code> - 指定参数类型，读取后内部会做转换处理</li>
+<li><code>choices</code> - 只能从一组指定值中选择参数，否则会报错</li>
+<li><code>required</code> - 该参数必须有，否则报错</li>
+<li><code>help</code> - 指定参数的help信息，也可禁止输出help信息</li>
+<li><code>metavar</code> - 指定属性的显示名称，内部值仍然由<code>dest</code>指定</li>
+<li><code>dest</code>- 指定属性的内部名称；默认是使用第一个长选项(<code>--</code>)，如果全部都是短选项（<code>-</code>），使用第一个</li>
+</ul>
+
+
+<h3>parse_args()</h3>
+
+<pre><code>ArgumentParser.parse_args(args=None, namespace=None)
+</code></pre>
+
+<p>默认从<code>sys.argv</code>读取参数，创建一个空的<code>Namespace</code>对象存储属性</p>
+
+<h3>Ohter</h3>
+
+<ul>
+<li>子命令
+
+<ul>
+<li><code>ArgumentParser.add_subparsers()</code> - 适用于有子命令的程序</li>
+</ul>
+</li>
+<li>参数分组
+
+<ul>
+<li><code>ArgumentParser.add_argument_group(title=None, description=None)</code> - 将选项分组显示</li>
+</ul>
+</li>
+<li>互斥选项
+
+<ul>
+<li><code>argparse.add_mutually_exclusive_group(required=False)</code> - 互斥组中的选项不得同时出现，否则报错</li>
+</ul>
+</li>
+<li>默认参数
+
+<ul>
+<li><code>ArgumentParser.set_defaults(**kwargs)</code> - 设置选项默认值，适用于某些不需要检查的选项；优先级高于<code>default</code>参数</li>
+<li><code>ArgumentParser.get_default(dest)</code> - 获取选项默认值</li>
+</ul>
+</li>
+<li>Printing Help
+
+<ul>
+<li><code>ArgumentParser.print_usage(file=None)</code></li>
+<li><code>ArgumentParser.print_help(file=None)</code></li>
+<li><code>ArgumentParser.format_usage()</code></li>
+<li><code>ArgumentParser.format_help()</code></li>
+</ul>
+</li>
+<li>局部分析
+
+<ul>
+<li><code>ArgumentParser.parse_known_args(args=None, namespace=None)</code> - 分析剩下的没有定义的参数和选项被一起放到一个List中</li>
+</ul>
+</li>
+<li>自定义文件分析
+
+<ul>
+<li><code>ArgumentParser.convert_arg_line_to_args(arg_line)</code> - 实现该方法，从自定义文件读取选项和参数</li>
+</ul>
+</li>
+<li>退出
+
+<ul>
+<li><code>ArgumentParser.exit(status=0, message=None)</code></li>
+<li><code>ArgumentParser.error(message)</code></li>
+</ul>
+</li>
+<li>从老的<code>optparse</code>升级到新的<code>argparse</code>（见官方文档）</li>
+</ul>
+
+
+  </section>
+  
+</article>
+
+
+<section id="page_nav">
+  
+  <a href='/2013/09/27/git'>← Previous</a>
+  
+  
+  <a href='/2013/10/18/ssh-with-key'>Next →</a>
+  
+</section>
+
+
+
+        </div>
+        <footer>
+          <div>
+            &copy; 2013 ~ 2015 Eric Zhong | powered by jekyll | themed by <a href="http://jiangle.name" title="jiangle">jiangle</a> | fork <a href="https://github.com/ericzhong/blog" title="fork me">me</a>
+          </div>
+        </footer>
+      </div> <!-- main -->
+  </body>
+</html>
+
