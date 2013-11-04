@@ -1,3 +1,10 @@
+---
+layout: post
+title: OpenStack源码安装
+tags: openstack cloud
+category: it
+---
+
 # 声明
 
 # 安装

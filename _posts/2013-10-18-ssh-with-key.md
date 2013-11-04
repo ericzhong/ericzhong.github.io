@@ -1,3 +1,11 @@
+---
+layout: post
+title: SSH密钥登入
+tags: ssh
+category: it
+---
+
+
 ##在客户端建立公钥和私钥
 
 在`~/.ssh`下生成公钥`id_rsa.pub`和私钥`id_rsa`
