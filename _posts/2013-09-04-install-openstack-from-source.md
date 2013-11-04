@@ -50,7 +50,7 @@
 	
 安装一些基本工具
 
-	apt-get install vim build-essential git python-dev python-setuptools python-pip libxml2-dev libxslt-dev curl
+	apt-get install vim build-essential git python-dev python-setuptools python-pip libxml2-dev libxslt-dev curl sheepdog
 	
 附：当工作未完成且需要关机时，先“保存状态后关闭”，以后再“从保存状态启动”
 
@@ -626,7 +626,17 @@ To distribute the partitions across the drives in the ring
 
 	swift-init all start
 	
-注：启动时可能会报错`NameError: name '_' is not defined`，解决方案见`Troubleshooting`部分
+> 启动时可能会报错`NameError: name '_' is not defined`，解决方案见`Troubleshooting`部分
+
+重启系统后需要重新挂载，执行
+
+	for zone in 1 2 3 ; do
+	    for device in 1 2 ; do
+	        LOOPDEVICE=$(losetup --show -f /var/tmp/swift-device-z${zone}d${device})
+	        mount -o noatime,nodiratime,nobarrier,user_xattr $LOOPDEVICE \
+	        /srv/node/z${zone}d${device}
+	    done
+	done
 	
 ###测试Swift
 
@@ -963,9 +973,6 @@ To distribute the partitions across the drives in the ring
 	# commit 516586a6b8f48a912d9b3d090f2d0a95a267feb2
 	git clone https://github.com/openstack/python-novaclient.git
 	
-	# commit 142aa4583cd0ffa11e8ebc19a52f024f1ff1b235
-	git clone https://github.com/kanaka/noVNC.git
-	
 安装源码
 
 	cd nova
@@ -980,7 +987,7 @@ To distribute the partitions across the drives in the ring
 
 安装依赖
 
-	apt-get install python-libvirt guestmount bridge-utils
+	apt-get install python-libvirt guestmount bridge-utils dnsmasq-utils
 
 安装配置文件
 
@@ -994,6 +1001,62 @@ To distribute the partitions across the drives in the ring
 	mysql -u root -p
 	create database nova;
 	quit
+
+###网络结构
+
+本实验使用`FlatDHCP`网络模型，如下；
+
+	VMs.eth0 <---> vnet1 <---> br100 <---> Host.eth1
+	Host.eth0 <---> Internet
+
+多个虚机通过`vnet1`形成一个局域网，该内部网络通过`br100`与Host机的`eth1`通信；
+
+为了简化网络结构，`eth1`不接外网（不设网关即可），`eth0`可访问外网
+
+这里为了方便演示，删除Ubuntu的图形网络管理工具`NetworkManager`
+
+	dpkg -P network-manager-gnome network-manager
+
+手动修改网络配置文件`/etc/network/interfaces`
+
+	auto lo
+	iface lo inet loopback
+	
+	auto eth0
+	iface eth0 inet dhcp
+	
+	auto eth1
+	iface eth1 inet static
+	address 192.168.1.11
+	netmask 255.255.255.0
+	
+重启网络，使设置生效
+
+	/etc/init.d/networking restart
+
+然后查看一下
+
+	$ ifconfig
+	... (省略不相关信息)
+	eth0      Link encap:Ethernet  HWaddr 00:25:90:97:68:82
+	          inet addr:192.168.1.148  Bcast:192.168.1.255  Mask:255.255.255.0
+	          inet6 addr: fe80::225:90ff:fe97:6882/64 Scope:Link
+	          UP BROADCAST RUNNING MULTICAST  MTU:1500  Metric:1
+	          RX packets:143839395 errors:0 dropped:0 overruns:7660706 frame:0
+	          TX packets:78108678 errors:0 dropped:0 overruns:0 carrier:0
+	          collisions:0 txqueuelen:1000 
+	          RX bytes:56720182566 (56.7 GB)  TX bytes:7408859473 (7.4 GB)
+	          Memory:df720000-df740000
+	
+	eth1      Link encap:Ethernet  HWaddr 00:25:90:97:68:83  
+	          inet addr:192.168.1.11  Bcast:192.168.1.255  Mask:255.255.255.0
+	          inet6 addr: fe80::225:90ff:fe97:6883/64 Scope:Link
+	          UP BROADCAST RUNNING PROMISC MULTICAST  MTU:1500  Metric:1
+	          RX packets:89060556 errors:0 dropped:0 overruns:8050921 frame:0
+	          TX packets:78019479 errors:0 dropped:0 overruns:0 carrier:0
+	          collisions:0 txqueuelen:1000 
+	          RX bytes:8384089287 (8.3 GB)  TX bytes:7110520607 (7.1 GB)
+	          Memory:df700000-df720000
 
 ###配置Nova
 
@@ -1052,19 +1115,19 @@ To distribute the partitions across the drives in the ring
 	dhcpbridge_flagfile=/etc/nova/nova.conf
 	firewall_driver=nova.virt.libvirt.firewall.IptablesFirewallDriver
 	# Change my_ip to match each host
-	my_ip=127.0.0.1
+	my_ip=192.168.1.148
 	public_interface=eth0
-	vlan_interface=eth0
+	#vlan_interface=eth0
+	flat_interface=eth1
 	flat_network_bridge=br100
-	flat_interface=eth0
 	fixed_range=192.168.100.0/24
 	use_ipv6=false
 
 	# NOVNC CONSOLE
 	novncproxy_base_url=http://127.0.0.1:6080/vnc_auto.html
 	# Change vncserver_proxyclient_address and vncserver_listen to match each compute host
-	vncserver_proxyclient_address=127.0.0.1
-	vncserver_listen=127.0.0.1
+	vncserver_proxyclient_address=192.168.1.148
+	vncserver_listen=192.168.1.148
 
 	# AUTHENTICATION
 	auth_strategy=keystone
@@ -1076,6 +1139,11 @@ To distribute the partitions across the drives in the ring
 	admin_user = admin
 	admin_password = admin
 	signing_dirname = /tmp/keystone-signing-nova
+
+注意，上面配置中有几个IP一定要配置正确：
+	my_ip=192.168.1.148
+	vncserver_proxyclient_address=192.168.1.148
+	vncserver_listen=192.168.1.148
 
 修改`/etc/nova/api-paste.ini`
 
@@ -1095,16 +1163,13 @@ To distribute the partitions across the drives in the ring
 	
 ###启动服务
 
-	# controller node
 	nova-api
 	nova-conductor
 	nova-network
 	nova-scheduler
-	noVNC/utils/nova-novncproxy --config-file /etc/nova/nova.conf --web `pwd`/noVNC/
-
-	# compute node
 	nova-compute
-	#nova-network
+
+> 注意：终端必须使用英文环境
 
 ###创建Endpoint
 
@@ -1164,19 +1229,11 @@ To distribute the partitions across the drives in the ring
 
 ###配置网络
 
-将网卡设为`promiscuous mode`
+将网卡`eth1`设为混杂模式`promiscuous mode`
 
-	ip link set eth0 promisc on
+	ip link set eth1 promisc on
 	
-修改网卡配置`/etc/network/interfaces`
-
-	# The loopback network interface
-	auto lo
-	iface lo inet loopback
-
-	# The primary network interface
-	auto eth0
-	iface eth0 inet dhcp
+增加`br100`的配置到`/etc/network/interfaces`
 
 	# Bridge network interface for VM networks
 	auto br100
@@ -1186,7 +1243,7 @@ To distribute the partitions across the drives in the ring
 	bridge_stp off
 	bridge_fd 0
 
-增加桥接设备（取名`br100`）
+增加桥接设备（取名`br100`），重启网络生效
 
 	brctl addbr br100
 	/etc/init.d/networking restart
@@ -1194,47 +1251,66 @@ To distribute the partitions across the drives in the ring
 检查一下
 
 	$ ifconfig
-        br100     Link encap:Ethernet  HWaddr 36:31:ff:07:28:7b
-                  inet addr:192.168.100.1  Bcast:192.168.100.255  Mask:255.255.255.0
-                  inet6 addr: fe80::3431:ffff:fe07:287b/64 Scope:Link
-                  UP BROADCAST RUNNING MULTICAST  MTU:1500  Metric:1
-                  RX packets:0 errors:0 dropped:0 overruns:0 frame:0
-                  TX packets:9 errors:0 dropped:0 overruns:0 carrier:0
-                  collisions:0 txqueuelen:0
-                  RX bytes:0 (0.0 B)  TX bytes:706 (706.0 B)
+	br100     Link encap:Ethernet  HWaddr 00:25:90:97:68:83  
+	          inet addr:192.168.100.1  Bcast:192.168.100.255  Mask:255.255.255.0
+	          inet6 addr: fe80::90a5:deff:fe52:ccfd/64 Scope:Link
+	          UP BROADCAST RUNNING MULTICAST  MTU:1500  Metric:1
+	          RX packets:3977 errors:0 dropped:0 overruns:0 frame:0
+	          TX packets:1799 errors:0 dropped:0 overruns:0 carrier:0
+	          collisions:0 txqueuelen:0 
+	          RX bytes:455641 (455.6 KB)  TX bytes:279552 (279.5 KB)
+	
+	eth0      Link encap:Ethernet  HWaddr 00:25:90:97:68:82  
+	          inet addr:192.168.1.148  Bcast:192.168.1.255  Mask:255.255.255.0
+	          inet6 addr: fe80::225:90ff:fe97:6882/64 Scope:Link
+	          UP BROADCAST RUNNING MULTICAST  MTU:1500  Metric:1
+	          RX packets:143840605 errors:0 dropped:0 overruns:7660706 frame:0
+	          TX packets:78109048 errors:0 dropped:0 overruns:0 carrier:0
+	          collisions:0 txqueuelen:1000 
+	          RX bytes:56720315738 (56.7 GB)  TX bytes:7408903837 (7.4 GB)
+	          Memory:df720000-df740000
+	
+	eth1      Link encap:Ethernet  HWaddr 00:25:90:97:68:83  
+	          inet6 addr: fe80::225:90ff:fe97:6883/64 Scope:Link
+	          UP BROADCAST RUNNING PROMISC MULTICAST  MTU:1500  Metric:1
+	          RX packets:89230246 errors:0 dropped:0 overruns:8050921 frame:0
+	          TX packets:78019553 errors:0 dropped:0 overruns:0 carrier:0
+	          collisions:0 txqueuelen:1000 
+	          RX bytes:8428094346 (8.4 GB)  TX bytes:7110538291 (7.1 GB)
+	          Memory:df700000-df720000 
+	
+	virbr0    Link encap:Ethernet  HWaddr b6:f1:f3:8f:63:e6  
+	          inet addr:192.168.122.1  Bcast:192.168.122.255  Mask:255.255.255.0
+	          UP BROADCAST MULTICAST  MTU:1500  Metric:1
+	          RX packets:0 errors:0 dropped:0 overruns:0 frame:0
+	          TX packets:0 errors:0 dropped:0 overruns:0 carrier:0
+	          collisions:0 txqueuelen:0 
+	          RX bytes:0 (0.0 B)  TX bytes:0 (0.0 B)
+	
+	vnet1     Link encap:Ethernet  HWaddr fe:16:3e:52:85:28  
+	          inet6 addr: fe80::fc16:3eff:fe52:8528/64 Scope:Link
+	          UP BROADCAST RUNNING MULTICAST  MTU:1500  Metric:1
+	          RX packets:524 errors:0 dropped:0 overruns:0 frame:0
+	          TX packets:3608 errors:0 dropped:0 overruns:0 carrier:0
+	          collisions:0 txqueuelen:500 
+	          RX bytes:96902 (96.9 KB)  TX bytes:435329 (435.3 KB)
 
-        eth0      Link encap:Ethernet  HWaddr 08:00:27:88:0c:a6
-                  inet addr:10.0.2.15  Bcast:10.0.2.255  Mask:255.255.255.0
-                  inet6 addr: fe80::a00:27ff:fe88:ca6/64 Scope:Link
-                  UP BROADCAST RUNNING PROMISC MULTICAST  MTU:1500  Metric:1
-                  RX packets:677269 errors:0 dropped:0 overruns:0 frame:0
-                  TX packets:361734 errors:0 dropped:0 overruns:0 carrier:0
-                  collisions:0 txqueuelen:1000
-                  RX bytes:524297575 (524.2 MB)  TX bytes:25305754 (25.3 MB)
+`eth1`目前看不到IP地址，可通过如下方式查看：
 
-        lo        Link encap:Local Loopback
-                  inet addr:127.0.0.1  Mask:255.0.0.0
-                  inet6 addr: ::1/128 Scope:Host
-                  UP LOOPBACK RUNNING  MTU:16436  Metric:1
-                  RX packets:270140 errors:0 dropped:0 overruns:0 frame:0
-                  TX packets:270140 errors:0 dropped:0 overruns:0 carrier:0
-                  collisions:0 txqueuelen:0
-                  RX bytes:105663149 (105.6 MB)  TX bytes:105663149 (105.6 MB)
-
-        virbr0    Link encap:Ethernet  HWaddr 32:d5:7b:ce:e5:b0
-                  inet addr:192.168.122.1  Bcast:192.168.122.255  Mask:255.255.255.0
-                  UP BROADCAST MULTICAST  MTU:1500  Metric:1
-                  RX packets:0 errors:0 dropped:0 overruns:0 frame:0
-                  TX packets:0 errors:0 dropped:0 overruns:0 carrier:0
-                  collisions:0 txqueuelen:0
-                  RX bytes:0 (0.0 B)  TX bytes:0 (0.0 B)
+	$ ip a
+	14: br100: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP 
+	    link/ether 00:25:90:97:68:83 brd ff:ff:ff:ff:ff:ff
+	    inet 192.168.100.1/24 brd 192.168.100.255 scope global br100
+	    inet 192.168.1.11/24 brd 192.168.1.255 scope global br100
+	    inet6 fe80::90a5:deff:fe52:ccfd/64 scope link 
+	       valid_lft forever preferred_lft forever	
 
 
-###创建虚机使用的网络
+###创建虚机使用的内部网络
 
 	nova-manage network create private --fixed_range_v4=192.168.100.0/24 --bridge_interface=br100
 
-###打开访问限制
+###放开访问限制
 
 查看安全分组
 
@@ -1245,14 +1321,13 @@ To distribute the partitions across the drives in the ring
 	| 1  | default | default     |
 	+----+---------+-------------+
 	
-放开SSH和ICMP（Ping）访问
+放开SSH和ICMP（Ping）的访问限制
 	
 	$ nova secgroup-add-rule default tcp 22 22 0.0.0.0/0
 	$ nova secgroup-add-rule default icmp -1 -1 0.0.0.0/0
-	$ nova secgroup-list-rules
+	$ nova secgroup-list-rules default
 
-> 配置22端口后`vagrant ssh`可能无法访问，可使用VirtualBox的界面登录
-> 然后可以根据需要安装图形界面，比如xfce: `apt-get install xubuntu-desktop; startx`
+> 配置22端口后`vagrant ssh`可能无法访问，可使用VirtualBox的界面登录，然后可以根据需要安装图形界面，比如xfce: `apt-get install xubuntu-desktop; startx`
 
 注入SSH公钥到虚机并确认（需要虚机Image支持）
 
@@ -1267,26 +1342,17 @@ To distribute the partitions across the drives in the ring
 先看看是否已经打开
 
 	$ sysctl net.ipv4.ip_forward
-	net.ipv4.ip_forward = 0
+	net.ipv4.ip_forward = 1
 	
 临时开启
 
 	$ sysctl -w net.ipv4.ip_forward=1
 
-永久开启，先编辑`/etc/sysctl.conf`
-
-	net.ipv4.ip_forward = 1
-
-再重启服务
-
-	/etc/init.d/procps restart	
-	
-
-### 运行虚机实例
+###创建虚机
 
 先确认所有服务都在运行(`libvirtd`,`nova-api`,`nova-scheduler`,`nova-compute`,`nova-network`)
 
-	$ ps -ef | grep libvirt
+	$ ps -ef | grep libvirtd
 	root     19970     1  0 14:04 ?        00:00:05 /usr/sbin/libvirtd -d
 
 	$ nova-manage service list
@@ -1341,10 +1407,10 @@ To distribute the partitions across the drives in the ring
 	| 2c0c5c9b-2511-4616-8186-3843b0800da1 | cirros | ACTIVE | None       | Running     | private=192.168.100.2 |
 	+--------------------------------------+--------+--------+------------+-------------+-----------------------+
 
-查看引导信息
+查看引导信息（启动失败能看到报错信息）
 
 	$ nova console-log cirros
-	...
+	... （此处省略N行）
 	Oct 17 10:02:00 cirros kern.info kernel: [    6.980753] ip_tables: (C) 2000-2006 Netfilter Core Team
 	Oct 17 10:02:13 cirros kern.debug kernel: [   19.977012] eth0: no IPv6 routers present
 	Oct 17 10:03:29 cirros authpriv.info dropbear[301]: Running in background
@@ -1359,16 +1425,9 @@ To distribute the partitions across the drives in the ring
 	login as 'cirros' user. default password: 'cubswin:)'. use 'sudo' for root.
 	cirros login: 
 
-虚机应该可以Ping通，然后SSH登陆（密码：`cubswin:)`），从虚机可以Ping通公网IP
+虚机应该可以Ping通，然后SSH登陆（密码：`cubswin:)`），最后从虚机应该可以Ping通公网IP
 
 	ssh cirros@192.168.100.2
-
-> 并非每次都能Ping通，可以不停的删除后再重建，有时Ping通后过会儿又不行了，尚不清楚原因
-
-如果要删除虚机，执行（貌似需要执行两次，第一次修改状态，第二次移除）
-
-	nova delete 2c0c5c9b-2511-4616-8186-3843b0800da1
-
 
 ##安装Horizon
 
@@ -1390,25 +1449,34 @@ To distribute the partitions across the drives in the ring
 	cp local_settings.py.example local_settings.py
 	cd -
 	
-修改配置`local_settings.py`
+创建默认角色`Member`
 
-	OPENSTACK_HOST = "127.0.0.1"
-	OPENSTACK_KEYSTONE_DEFAULT_ROLE = "admin"
+	keystone role-create --name Member
 
 启动
 
-	cd horizon
-	./manage.py runserver 0.0.0.0:8888
+	horizon/manage.py runserver 0.0.0.0:8888
 
 > 随便找个未被占用的端口即可
 > 
 > 如果使用Vagrant，到Virtualbox的网络设置中加个端口映射即可从Host访问
 
-创建一个默认角色`Member`（否则“项目”页面的操作会报错）
+访问页面: http://192.168.1.148:8888/  （登录：admin,123456）
 
-	keystone role-create --name Member
+###配置VNC
 
+> 在`Project->Instances`页面应该可以看到之前在终端下创建的虚机；但是点击`Instance Name`进入虚机页面，再切换到`Console`标签，无法打开终端页面，需要配置好VNC后才能正常使用
 
+获取noVNC
+
+	# commit 142aa4583cd0ffa11e8ebc19a52f024f1ff1b235
+	git clone https://github.com/kanaka/noVNC.git
+
+启动服务
+
+	noVNC/utils/nova-novncproxy --config-file /etc/nova/nova.conf --web `pwd`/noVNC/
+	nova-consoleauth
+	nova-xvpvncproxy
 
 
 #Troubleshooting
@@ -1703,6 +1771,10 @@ swift中没有`glance`这个container，可以手动创建，也可以修改配�
 
 	apt-get install guestmount
 	
+## [nova-network] nova.openstack.common.rpc.amqp OSError: [Errno 2] No such file or directory
+
+* 确定有该命令：`dhcp_release`，安装包`dnsmasq-utils`
+
 ## [Ping] 虚机Ping不通
 
 * 确认打开SSH和ICMP访问限制
@@ -1715,3 +1787,8 @@ swift中没有`glance`这个container，可以手动创建，也可以修改配�
 Horizon的“项目”页面点击“创建项目”按钮报错，因为缺少默认角色`Member`，创建即可
 
 	keystone role-create --name Member
+
+## [nova-consoleauth] UnsupportedRpcVersion: Specified RPC version, 1.0, not supported by this endpoint.
+
+Horizon的Console页面时不显示，发现`nova-consoleauth`报错
+
