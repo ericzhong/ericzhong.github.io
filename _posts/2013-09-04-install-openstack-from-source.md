@@ -11,59 +11,8 @@ category: it
 
 ## 准备实验环境
 
-本文使用`Vagrant`虚拟机（VirtualBox的一个前端），安装`Ubuntu 12.04（64-bit）`作为实验环境
+安装`Ubuntu 12.04（64-bit）`作为实验环境
 
-先在Host机上安装好`VirtualBox`和`Vagrant`	
-
-下载虚机映象
-
-	vagrant box add precise64 http://files.vagrantup.com/precise64.box
-
-创建配置文件（自定义工作目录：openstack）
-
-	mkdir ~/openstack
-	cd openstack
-	vagrant init precise64
-
-增加如下内容到新生成的配置文件（Host机通过`8080`端口访问虚机的80端口；2G虚拟内存）
-
-	config.vm.network :forwarded_port, guest: 80, host: 8080
-	config.vm.provider :virtualbox do |vb|
-		vb.customize ["modifyvm", :id, "--memory", "2048"]
-	end
-
-启动虚机并SSH登陆
-
-	vagrant up
-	vagrant ssh
-	
-国内用户可以换更快的源
-
-	sudo su
-	cat > /etc/apt/sources.list << EOF
-	deb http://mirrors.163.com/ubuntu/ precise main universe restricted multiverse
-	deb-src http://mirrors.163.com/ubuntu/ precise main universe restricted multiverse
-	deb http://mirrors.163.com/ubuntu/ precise-security universe main multiverse restricted
-	deb-src http://mirrors.163.com/ubuntu/ precise-security universe main multiverse restricted
-	deb http://mirrors.163.com/ubuntu/ precise-updates universe main multiverse restricted
-	deb http://mirrors.163.com/ubuntu/ precise-proposed universe main multiverse restricted
-	deb-src http://mirrors.163.com/ubuntu/ precise-proposed universe main multiverse restricted
-	deb http://mirrors.163.com/ubuntu/ precise-backports universe main multiverse restricted
-	deb-src http://mirrors.163.com/ubuntu/ precise-backports universe main multiverse restricted
-	deb-src http://mirrors.163.com/ubuntu/ precise-updates universe main multiverse restricted
-	EOF
-	
-	apt-get update
-	
-安装一些基本工具
-
-	apt-get install vim build-essential git python-dev python-setuptools python-pip libxml2-dev libxslt-dev curl sheepdog
-	
-附：当工作未完成且需要关机时，先“保存状态后关闭”，以后再“从保存状态启动”
-
-	vagrant suspend
-	vagrant up
-	
 ## 安装数据库
 
 	sudo apt-get install mysql-server mysql-client python-mysqldb
@@ -79,8 +28,7 @@ category: it
 	quit
 
 获取源码
-
-	# commit 8ba9898f4271ed61b3080ec479b43e6fc1984345
+	# commit 5097a03f8f77f54acefefb9886d3064b638184cb
 	git clone git://github.com/openstack/keystone.git
 	
 安装依赖
@@ -288,7 +236,7 @@ category: it
 
 获取源码
 
-	# commit 5964082b2cd7aa2db6bcd112a5d33939e0f68bd9
+	# commit f46b48e1dc5747faef5857d331db9a441b8b6af6
 	git clone git://github.com/openstack/swift.git
 
 安装依赖
@@ -670,10 +618,10 @@ To distribute the partitions across the drives in the ring
 
 获取源码
 
-	# commit e3328089ef8b99b6ecf66bb2e07aec59388d4afd
+	# commit 4e7c8e6d553e9d187b6c7f6eb284b4b7d63cfd74 
 	git clone git://github.com/openstack/glance.git
 
-	# commit cd11833cffa306516704e871fad23699e21339f3
+	# commit 518cb2508d6557f1e8f1c8c480720e46fef4bae9 
 	git clone git://github.com/openstack/python-glanceclient.git 
 	
 安装
@@ -808,10 +756,10 @@ To distribute the partitions across the drives in the ring
 
 获取源码
 
-	# commit 3da3a0e827ff0e099514702d7116084245f03e80
+	# commit 300ce61120ce179d1d0e4ffe8aa0bd4ceaddba6b 
 	git clone https://github.com/openstack/cinder.git
 
-	# commit 728a3419c9321f057b2a5e48b77281dc37487150
+	# commit d21ed05b4ed1a5b5321876c481e0286d3696afd5 
 	git clone https://github.com/openstack/python-cinderclient.git
 
 安装
@@ -974,10 +922,10 @@ To distribute the partitions across the drives in the ring
 
 获取源码
 
-	# commit e0b5bde35a54c6855da3639582edc68afa43d5ee
+	# commit 042dc449701ad6fdec04c475b309dd0f072f61ab 
 	git clone git://github.com/openstack/nova.git
 	
-	# commit 516586a6b8f48a912d9b3d090f2d0a95a267feb2
+	# commit 1d2263dae339590b60250793bc81ec5776845060 
 	git clone https://github.com/openstack/python-novaclient.git
 	
 安装源码
@@ -1131,10 +1079,11 @@ To distribute the partitions across the drives in the ring
 	use_ipv6=false
 
 	# NOVNC CONSOLE
-	novncproxy_base_url=http://127.0.0.1:6080/vnc_auto.html
-	# Change vncserver_proxyclient_address and vncserver_listen to match each compute host
-	vncserver_proxyclient_address=192.168.1.148
-	vncserver_listen=192.168.1.148
+	vnc_enabled = true
+	vncserver_listen = 0.0.0.0
+	vncserver_proxyclient_address = 192.168.1.11
+	xvpvncproxy_base_url = http://192.168.1.148:6081/console
+	novncproxy_base_url = http://192.168.1.148:6080/vnc_auto.html
 
 	# AUTHENTICATION
 	auth_strategy=keystone
@@ -1147,10 +1096,13 @@ To distribute the partitions across the drives in the ring
 	admin_password = admin
 	signing_dirname = /tmp/keystone-signing-nova
 
-注意，上面配置中有几个IP一定要配置正确：
-	my_ip=192.168.1.148
-	vncserver_proxyclient_address=192.168.1.148
-	vncserver_listen=192.168.1.148
+> 注意这几个IP
+>
+>	my_ip=192.168.1.148
+>	vncserver_listen = 0.0.0.0
+>	vncserver_proxyclient_address = 192.168.1.11
+>	xvpvncproxy_base_url = http://192.168.1.148:6081/console
+>	novncproxy_base_url = http://192.168.1.148:6080/vnc_auto.html
 
 修改`/etc/nova/api-paste.ini`
 
@@ -1334,8 +1286,6 @@ To distribute the partitions across the drives in the ring
 	$ nova secgroup-add-rule default icmp -1 -1 0.0.0.0/0
 	$ nova secgroup-list-rules default
 
-> 配置22端口后`vagrant ssh`可能无法访问，可使用VirtualBox的界面登录，然后可以根据需要安装图形界面，比如xfce: `apt-get install xubuntu-desktop; startx`
-
 注入SSH公钥到虚机并确认（需要虚机Image支持）
 
 	$ ssh-keygen -t rsa       # 一路回车
@@ -1414,7 +1364,7 @@ To distribute the partitions across the drives in the ring
 	| 2c0c5c9b-2511-4616-8186-3843b0800da1 | cirros | ACTIVE | None       | Running     | private=192.168.100.2 |
 	+--------------------------------------+--------+--------+------------+-------------+-----------------------+
 
-查看引导信息（启动失败能看到报错信息）
+查看引导信息（如果启动失败，能看到报错信息）
 
 	$ nova console-log cirros
 	... （此处省略N行）
@@ -1440,7 +1390,7 @@ To distribute the partitions across the drives in the ring
 
 获取源码
 
-	# commit 1f7d703730d62c5e3896661a76a9808ec765ae1a
+	# commit ae6abf715701b7ce026efb16c7af20b16cc90ee2 
 	git clone https://github.com/openstack/horizon.git
 
 安装
@@ -1460,30 +1410,60 @@ To distribute the partitions across the drives in the ring
 
 	keystone role-create --name Member
 
-启动
+启动（使用空闲端口）
 
 	horizon/manage.py runserver 0.0.0.0:8888
 
-> 随便找个未被占用的端口即可
-> 
-> 如果使用Vagrant，到Virtualbox的网络设置中加个端口映射即可从Host访问
+访问页面
 
-访问页面: http://192.168.1.148:8888/  （登录：admin,123456）
+* http://192.168.1.148:8888/  （登录：admin,123456）
 
-###配置VNC
+###通过Web访问`VNC Console`
 
-> 在`Project->Instances`页面应该可以看到之前在终端下创建的虚机；但是点击`Instance Name`进入虚机页面，再切换到`Console`标签，无法打开终端页面，需要配置好VNC后才能正常使用
+要想Horizon的Console页面正常显示，需要`noVNC`，原理如下：
+
+	vnc.html ---> nova-novncproxy(6080) ---> vnc server(5900)
 
 获取noVNC
 
-	# commit 142aa4583cd0ffa11e8ebc19a52f024f1ff1b235
+	# commit 75d69b9f621606c3b2db48e4778ff41307f65c6d 
 	git clone https://github.com/kanaka/noVNC.git
 
 启动服务
 
 	noVNC/utils/nova-novncproxy --config-file /etc/nova/nova.conf --web `pwd`/noVNC/
 	nova-consoleauth
-	nova-xvpvncproxy
+
+###通过Client访问`VNC Console`
+
+工作原理
+	
+	xvpvncviewer ---> nova-xvpvncproxy(6081) ---> vnc server(5900)
+
+安装
+
+	# commit fc292084732bd20bc69746a0567001293b63608f
+	git clone https://github.com/cloudbuilders/nova-xvpvncviewer
+
+	cd nova-xvpvncviewer/viewer
+	make
+
+启动服务
+
+	nova-xvpvncproxy --config-file=/etc/nova/nova.conf
+
+手动获取URL
+
+	nova get-vnc-console [vm_id or vm_name] xvpvnc
+
+启动客户端
+
+	java -jar VncViewer.jar url [url]
+
+###使用Apache提供Web服务
+
+见官方文档
+
 
 
 #Troubleshooting
@@ -1797,5 +1777,8 @@ Horizon的“项目”页面点击“创建项目”按钮报错，因为缺少�
 
 ## [nova-consoleauth] UnsupportedRpcVersion: Specified RPC version, 1.0, not supported by this endpoint.
 
-Horizon的Console页面时不显示，发现`nova-consoleauth`报错
+Horizon的Console页面不显示，发现`nova-consoleauth`报错
 
+`noVNC`给`nova-consoleauth`发了一个`check_token`的RPC，RPC版本为空则默认设为1.0，而`nova-consoleauth`这边默认是2.0的API，在检查API版本兼容性时报错，可以硬改成2.0，也能过；
+
+但是最后页面还是显示不出来，用xvpvncviewer能接上，但看不到任何东西，暂不能确定问题所在。
