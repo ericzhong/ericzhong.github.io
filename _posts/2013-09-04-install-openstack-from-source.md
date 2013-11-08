@@ -5,8 +5,6 @@ tags: openstack cloud
 category: it
 ---
 
-# 声明
-
 # 安装
 
 ## 准备实验环境
@@ -76,7 +74,7 @@ category: it
 	
 启动keystone服务(加上`-d`参数可查看debug信息)
 
-	keystone-all &
+	keystone-all
 	
 设置环境变量（目前还没有账户，只能先使用`admin_token`方式验证）
 
@@ -714,8 +712,8 @@ To distribute the partitions across the drives in the ring
 
 启动服务
 
-	glance-api --config-file /etc/glance/glance-api.conf &
-	glance-registry --config-file /etc/glance/glance-registry.conf &
+	glance-api --config-file /etc/glance/glance-api.conf
+	glance-registry --config-file /etc/glance/glance-registry.conf
 
 测试一下
 
@@ -851,9 +849,9 @@ To distribute the partitions across the drives in the ring
 
 启动服务
 
-	cinder-volume --config-file=/etc/cinder/cinder.conf &
-	cinder-api --config-file=/etc/cinder/cinder.conf &
-	cinder-scheduler --config-file=/etc/cinder/cinder.conf &
+	cinder-volume --config-file=/etc/cinder/cinder.conf
+	cinder-api --config-file=/etc/cinder/cinder.conf
+	cinder-scheduler --config-file=/etc/cinder/cinder.conf
 
 创建`service`和`endpoint`
 
@@ -1617,7 +1615,7 @@ To distribute the partitions across the drives in the ring
 确认keystone服务是否启动
 
     ps -Af | grep keystone
-    keystone-all &
+    keystone-all
     
 ## [glance add] Authorization Failed: *** (HTTP Unable to establish connection to https://127.0.0.1:35357/v2.0/tokens)
 
