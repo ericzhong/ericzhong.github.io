@@ -9,35 +9,116 @@ category: it
 
 ## 准备实验环境
 
-安装`Ubuntu 12.04（64-bit）`作为实验环境
+安装`Ubuntu 12.04 LTS`作为实验环境
+
+准备两台机器（All-In-One 一台也行），各两个网卡（如果使用虚拟机做实验，`eth0`全部`桥接`，用来访问Internet，`eth1`全部`Host-only`，内部网络）
+
+`/etc/network/interfaces`配置参考如下：
+
+	auto lo
+	iface lo inet loopback
+	
+	auto eth0
+	iface eth0 inet dhcp
+	
+	auto eth1
+	iface eth1 inet static
+	address 10.0.0.10
+	netmask 255.255.255.0
+
+为使手动配置生效，删除图形网络管理工具`NetworkManager`（也可以用图形界面配置，这里使用手动只是为了方便演示）
+
+	dpkg -r network-manager network-manager-gnome
+
+重启服务后设置生效
+
+	/etc/init.d/networking restart
+
+两台机器IP（仅供参考）：
+
+	# Controller Node
+	192.168.1.4		# external (Internet)
+	10.0.0.10		# internal
+	
+	# Compute Node
+	192.168.1.6		# external (Internet)
+	10.0.0.11		# internal
+
+两台机器都配置好`hostname`，`/etc/hosts`增加：
+
+	10.0.0.10       controller
+	10.0.0.11       compute1
+
+##安装基本包
+
+后面会用到的工具，以及安装过程中会需要的一些额外依赖，一次性全装了
+
+	apt-get install vim git screen python-pip python-dev libxml2-dev libxslt-dev sheepdog
+
+##安装NTP
+
+为了保持时间同步，需要在所有运行OpenStack服务的Node上安装NTP
+
+	apt-get install ntp
+
+除`controller`外，其它所有机器新增`/etc/cron.daily/ntpdate`，内容如下：
+
+	ntpdate controller
+	hwclock -w
+
+修改权限
+
+	chmod a+x /etc/cron.daily/ntpdate
+
 
 ## 安装数据库
 
-	sudo apt-get install mysql-server mysql-client python-mysqldb
+> Compute Node不用装`mysql-server`和作以下配置
+
+	apt-get install mysql-client python-mysqldb mysql-server
 
 终端弹出界面，提示输入数据库的root用户密码（例如：`111111`）
 
+修改`/etc/mysql/my.cnf`，允许从外部访问
+
+	#bind-address           = 127.0.0.1
+	bind-address            = 10.0.0.10
+
+删除匿名用户（第一个填`N`，不改Root密码，其它都填`Y`）
+
+	mysql_secure_installation
+
+重启服务
+
+	/etc/init.d/mysql restart
+
+
+## 安装消息队列
+
+	apt-get install rabbitmq-server
+	rabbitmqctl change_password guest 321321
+	
+
 ## 安装Keystone
 
-创建keystone数据库
+安装
 
-	mysql -u root -p
-	create database keystone;
-	quit
-
-获取源码
-	# commit 5097a03f8f77f54acefefb9886d3064b638184cb
+	# commit 6751c7dc3b1b364e8f59d452f5702e89d4d56bcb
 	git clone git://github.com/openstack/keystone.git
-	
-安装依赖
 
 	cd keystone
 	pip install -r requirements.txt
-	
-安装keystone到系统
-
 	python setup.py install
-	
+	cd ..
+
+创建数据库(`keystone`)和用户(`keystone`,`keystone_password`)
+
+	mysql -u root -p
+	create database keystone;
+	GRANT ALL PRIVILEGES ON keystone.* TO 'keystone'@'localhost' IDENTIFIED BY 'keystone_password';
+	GRANT ALL PRIVILEGES ON keystone.* TO 'keystone'@'%' IDENTIFIED BY 'keystone_password';
+	quit
+
 复制配置文件
 
 	mkdir -p /etc/keystone
@@ -46,29 +127,33 @@ category: it
 	cd /etc/keystone
 	cp keystone.conf.sample keystone.conf
 	
-修改`/etc/keystone/keystone.conf` (使用`openssl rand -hex 10`生成`token：fa9a647b8de836869722`随机串)
+修改`/etc/keystone/keystone.conf` (使用`openssl rand -hex 10`生成`token`随机串`fa9a647b8de836869722`)
 
 	[DEFAULT]
 	admin_token = fa9a647b8de836869722
 	public_port = 5000
 	admin_port = 35357
-	public_endpoint = http://localhost:%(public_port)s/v2.0
-	admin_endpoint = http://localhost:%(admin_port)s/v2.0
+	public_endpoint = http://controller:%(public_port)s/v2.0
+	admin_endpoint = http://controller:%(admin_port)s/v2.0
+
+	log_file = keystone.log
+	log_dir = /var/log/keystone
 
 	[sql]
-	# connection = sqlite:///keystone.db
-	connection = mysql://root:111111@localhost/keystone
+	connection = mysql://keystone:keystone_password@controller/keystone
 
 	[catalog]
 	driver = keystone.catalog.backends.sql.Catalog
-	# driver = keystone.catalog.backends.templated.TemplatedCatalog
-	# template_file = default_catalog.templates
+
+创建日志目录
+
+	mkdir -pv /var/log/keystone
 
 初始化数据库
 
 	keystone-manage db_sync
 	
-初始化证书 （参数意义：`chmod root:root`）
+初始化证书`/etc/keystone/ssl/*` （参数意义：`chmod root:root`）
 
 	keystone-manage pki_setup --keystone-user=root --keystone-group=root
 	
@@ -79,11 +164,11 @@ category: it
 设置环境变量（目前还没有账户，只能先使用`admin_token`方式验证）
 
 	export SERVICE_TOKEN=fa9a647b8de836869722
-	export SERVICE_ENDPOINT=http://localhost:35357/v2.0
+	export SERVICE_ENDPOINT=http://controller:35357/v2.0
 	
 创建类型为`identity`的`service`和相应的`endpoint`
 
-	keystone service-create --name=keystone --type=identity \
+	$ keystone service-create --name=keystone --type=identity \
 	--description="Keystone Identity Service"
 	+-------------+----------------------------------+
 	|   Property  |              Value               |
@@ -94,64 +179,38 @@ category: it
 	|     type    |             identity             |
 	+-------------+----------------------------------+
 	
-	keystone endpoint-create --service_id 714af530900840ef88106765f13f1921 \
-	--publicurl 'http://127.0.0.1:5000/v2.0' \
-	--adminurl 'http://127.0.0.1:35357/v2.0' \
-	--internalurl 'http://127.0.0.1:5000/v2.0'
+	$ keystone endpoint-create --service_id 714af530900840ef88106765f13f1921 \
+	--publicurl 'http://controller:5000/v2.0' \
+	--adminurl 'http://controller:35357/v2.0' \
+	--internalurl 'http://controller:5000/v2.0'
 	
-	keystone endpoint-list
+	$ keystone endpoint-list
 	+----------------------------------+-----------+----------------------------+----------------------------+-----------------------------+----------------------------------+
 	|                id                |   region  |         publicurl          |        internalurl         |           adminurl          |            service_id            |
 	+----------------------------------+-----------+----------------------------+----------------------------+-----------------------------+----------------------------------+
-	| d28d840d4be74a778578953a1a13324f | regionOne | http://127.0.0.1:5000/v2.0 | http://127.0.0.1:5000/v2.0 | http://127.0.0.1:35357/v2.0 | 714af530900840ef88106765f13f1921 |
+	| d28d840d4be74a778578953a1a13324f | regionOne | http://controller:5000/v2.0 | http://controller:5000/v2.0 | http://controller:35357/v2.0 | 714af530900840ef88106765f13f1921 |
 	+----------------------------------+-----------+----------------------------+----------------------------+-----------------------------+----------------------------------+
 	
 ### 创建管理员（admin）账户
 
 创建用户、角色、租户
 
-	keystone user-create --name admin --pass 123456
-	+----------+----------------------------------+
-	| Property |              Value               |
-	+----------+----------------------------------+
-	|  email   |                                  |
-	| enabled  |               True               |
-	|    id    | 94d416d8ebf34d3e97e345afcc5a2283 |
-	|   name   |              admin               |
-	| tenantId |                                  |
-	+----------+----------------------------------+
-	
+	keystone user-create --name admin --pass admin_password
 	keystone role-create --name admin
-	+----------+----------------------------------+
-	| Property |              Value               |
-	+----------+----------------------------------+
-	|    id    | de5cdd28a71f4df2943ac617ed20695c |
-	|   name   |              admin               |
-	+----------+----------------------------------+
-
 	keystone tenant-create --name admin
-	+-------------+----------------------------------+
-	|   Property  |              Value               |
-	+-------------+----------------------------------+
-	| description |                                  |
-	|   enabled   |               True               |
-	|      id     | 40c76f9aa1c44907aa1a68b9cd7e8034 |
-	|     name    |              admin               |
-	+-------------+----------------------------------+
+	keystone user-role-add --user=admin --role=admin --tenant=admin
 
-将admin用户设置为admin角色和admin租户的成员 （参数为上面动态生成的ID）
+预先为所有服务创建一个租户
 
-	keystone user-role-add --user 94d416d8ebf34d3e97e345afcc5a2283 \
-	--role de5cdd28a71f4df2943ac617ed20695c \
-	--tenant_id 40c76f9aa1c44907aa1a68b9cd7e8034
+	keystone tenant-create --name=service
 	
 为admin用户创建快速设置环境变量的脚本
 	
 	cat > ~/keystonerc_admin << EOF
 	export OS_USERNAME=admin
+	export OS_PASSWORD=admin_password
 	export OS_TENANT_NAME=admin
-	export OS_PASSWORD=123456
-	export OS_AUTH_URL=http://127.0.0.1:35357/v2.0/
+	export OS_AUTH_URL=http://controller:35357/v2.0/
 	export PS1="[\u@\h \W(keystone_admin)]\$ "
 	EOF
 
@@ -162,73 +221,601 @@ category: it
 	
 用admin用户测试一下 (如果keystone用`-d`参数启动，还能看到debug信息)
 
-	. ~/keystonerc_admin
+	source ~/keystonerc_admin
 
-	keystone user-list
+	$ keystone user-list
 	+----------------------------------+-------+---------+-------+
 	|                id                |  name | enabled | email |
 	+----------------------------------+-------+---------+-------+
 	| 94d416d8ebf34d3e97e345afcc5a2283 | admin |   True  |       |
 	+----------------------------------+-------+---------+-------+
 
-### 创建用户账户 (可选)
+### 创建用户账户 (供参考)
 
 创建用户、角色、租户
 
-	keystone user-create --name joe --pass 123123
-	+----------+----------------------------------+
-	| Property |              Value               |
-	+----------+----------------------------------+
-	|  email   |                                  |
-	| enabled  |               True               |
-	|    id    | 770def1aa63847bb8a5d31e1df2004d5 |
-	|   name   |               joe                |
-	| tenantId |                                  |
-	+----------+----------------------------------+
+	keystone user-create --name USER --pass PASS
+	keystone role-create --name ROLE
+	keystone tenant-create --name TENANT
+	keystone user-role-add --user=USER --role=ROLE --tenant=TENANT
 	
-	keystone role-create --name user
-	+----------+----------------------------------+
-	| Property |              Value               |
-	+----------+----------------------------------+
-	|    id    | 430f055d142649d1b02e685025b07a5b |
-	|   name   |               user               |
-	+----------+----------------------------------+
+为用户创建环境变量快速设置脚本
 
-	keystone tenant-create --name trial
-	+-------------+----------------------------------+
-	|   Property  |              Value               |
-	+-------------+----------------------------------+
-	| description |                                  |
-	|   enabled   |               True               |
-	|      id     | 249d66d789d643fabc544f6d6fc9ed9f |
-	|     name    |              trial               |
-	+-------------+----------------------------------+
-
-将用户joe设置为user角色和租户trial的成员
-
-	keystone user-role-add --user 770def1aa63847bb8a5d31e1df2004d5 \
-	--role 430f055d142649d1b02e685025b07a5b \
-	--tenant_id 249d66d789d643fabc544f6d6fc9ed9f
-	
-为用户joe创建环境变量快速设置脚本
-
-	cat > ~/keystonerc_joe << EOF
-	export OS_USERNAME=joe
-	export OS_TENANT_NAME=trial
-	export OS_PASSWORD=123123
-	export OS_AUTH_URL=http://127.0.0.1:5000/v2.0/
-	export PS1="[\u@\h \W(keystone_joe)]\$ "
+	cat > ~/keystonerc_USER << EOF
+	export OS_USERNAME=USER
+	export OS_PASSWORD=PASS
+	export OS_TENANT_NAME=TENANT
+	export OS_AUTH_URL=http://controller:5000/v2.0/
+	export PS1="[\u@\h \W(keystone_USER)]\$ "
 	EOF
 	
-测试一下（`keystone user-list`只有管理员才有权限调用，应该会报错，但是`keystone token-get`可以返回信息）
+测试一下（`user-list`只有管理员才有权限调用，应该会报错，但是`token-get`可以返回信息）
 
-	. ~/keystonerc_joe
+	source ~/keystonerc_USER
 	
 	$ keystone user-list
 	2013-09-08 14:10:14.312 10936 WARNING keystone.common.wsgi [-] You are not authorized to perform the requested action, admin_required.
 	You are not authorized to perform the requested action, admin_required. (HTTP 403)
 	
 	keystone token-get
+
+
+## 安装Glance
+
+安装
+
+	# commit 153e33a8f5ae097aa1d9f0bdbf0010fc387dc22c
+	git clone git://github.com/openstack/glance.git
+
+	cd glance
+	pip install -r requirements.txt
+	python setup.py install
+	cd ..
+
+	# commit 518cb2508d6557f1e8f1c8c480720e46fef4bae9
+	git clone git://github.com/openstack/python-glanceclient.git 
+
+	cd python-glanceclient
+	pip install -r requirements.txt
+	python setup.py install
+	cd ..
+	
+创建数据库（`glance`）和用户（`glance`,`glance_password`）
+
+	mysql -u root -p
+	create database glance;	GRANT ALL PRIVILEGES ON glance.* TO 'glance'@'localhost' IDENTIFIED BY 'glance_password';	GRANT ALL PRIVILEGES ON glance.* TO 'glance'@'%' IDENTIFIED BY 'glance_password';
+	quit
+	
+复制配置文件
+
+	mkdir -p /etc/glance
+	cp glance/etc/* /etc/glance/
+
+修改`/etc/glance/`下的`glance-api.conf`和`glance-registry.conf`
+	
+	[DEFAULT]
+	sql_connection = mysql://glance:glance_password@controller/glance
+	
+	[keystone_authtoken]
+	auth_host = controller
+	auth_port = 35357
+	auth_protocol = http
+	admin_tenant_name = service
+	admin_user = glance
+	admin_password = glance_password
+
+创建日志目录
+
+	mkdir -p /var/log/glance
+
+初始化数据库
+
+	glance-manage db_sync
+
+> 如果数据库配置不正确，可能会在当前目录生成默认数据库文件`glance.sqlite`，最好保险的方式是确认数据库`glance`中是否创建了表
+>
+>		mysql -u root -p
+>		use glance;
+>		show tables;
+
+创建用户
+
+	keystone user-create --name=glance --pass=glance_password
+	keystone user-role-add --user=glance --tenant=service --role=admin
+
+创建Service和Endpoint
+
+	$ keystone service-create --name=glance --type=image --description="Glance Image Service"
+	+-------------+----------------------------------+
+	|   Property  |              Value               |
+	+-------------+----------------------------------+
+	| description |       Glance Image Service       |
+	|      id     | c9f6e93cfd384a27bdac595be296ad4a |
+	|     name    |              glance              |
+	|     type    |              image               |
+	+-------------+----------------------------------+	
+	$ keystone endpoint-create --service_id c9f6e93cfd384a27bdac595be296ad4a \
+	--publicurl http://controller:9292 \
+	--adminurl http://controller:9292 \
+	--internalurl http://controller:9292
+	+-------------+----------------------------------+
+	|   Property  |              Value               |
+	+-------------+----------------------------------+
+	|   adminurl  |     http://controller:9292       |
+	|      id     | c052904b25ac44c785c9ecb4cd53507e |
+	| internalurl |     http://controller:9292       |
+	|  publicurl  |     http://controller:9292       |
+	|    region   |            regionOne             |
+	|  service_id | c9f6e93cfd384a27bdac595be296ad4a |
+	+-------------+----------------------------------+
+
+启动服务
+
+	glance-api --config-file /etc/glance/glance-api.conf
+	glance-registry --config-file /etc/glance/glance-registry.conf
+
+测试一下
+
+	source keystonerc_admin
+
+	glance image-list
+	+----+------+-------------+------------------+------+--------+
+	| ID | Name | Disk Format | Container Format | Size | Status |
+	+----+------+-------------+------------------+------+--------+
+	+----+------+-------------+------------------+------+--------+
+
+增加image
+
+	wget https://launchpad.net/cirros/trunk/0.3.0/+download/cirros-0.3.0-x86_64-disk.img
+	
+	glance image-create --name="Cirros 0.3.0" --disk-format=qcow2 \
+	--container-format=bare --is-public=true < cirros-0.3.0-x86_64-disk.img
+
+查看一下
+
+	$ glance image-list
+	+--------------------------------------+--------------+-------------+------------------+---------+--------+
+	| ID                                   | Name         | Disk Format | Container Format | Size    | Status |
+	+--------------------------------------+--------------+-------------+------------------+---------+--------+
+	| 4d1a5832-f229-4697-a889-39311f2611ef | Cirros 0.3.0 | qcow2       | bare             | 9761280 | active |
+	+--------------------------------------+--------------+-------------+------------------+---------+--------+
+
+	$ ls /var/lib/glance/images/
+	4d1a5832-f229-4697-a889-39311f2611ef
+
+
+##安装Nova
+
+###All Nodes
+
+安装
+
+	# commit 5ac0475845e1c7ee8cc19b38d37a0af7a3f4c1fa
+	git clone git://github.com/openstack/nova.git
+	
+	cd nova
+	pip install -r requirements.txt
+	python setup.py  install
+	cd ..
+
+	# commit 3978172012a601e3a623066fd724f5a6dd9e1caf
+	git clone https://github.com/openstack/python-novaclient.git
+	
+	cd python-novaclient
+	pip install -r requirements.txt
+	python setup.py  install
+	cd ..
+
+安装配置文件
+
+	cp -af  nova/etc/nova /etc
+	cp /etc/nova/nova.conf.sample /etc/nova/nova.conf
+
+###Controller Node
+
+创建数据库(`nova`)和用户（`nova`,`nova_password`）
+
+	mysql -u root -p
+	create database nova;
+	GRANT ALL PRIVILEGES ON nova.* TO 'nova'@'localhost' IDENTIFIED BY 'nova_password';
+	GRANT ALL PRIVILEGES ON nova.* TO 'nova'@'%' IDENTIFIED BY 'nova_password';
+	quit
+
+修改`/etc/nova/nova.conf`
+
+	[DEFAULT]
+
+	sql_connection = mysql://nova:nova_password@controller/nova
+
+	my_ip=10.0.0.10
+	vncserver_listen=0.0.0.0
+	vncserver_proxyclient_address=10.0.0.10
+
+	auth_strategy=keystone
+	lock_path=/var/lock/nova
+
+	# RabbitMQ
+	rpc_backend = nova.rpc.impl_kombu
+	rabbit_host = controller
+	rabbit_port=5672
+	rabbit_userid=guest
+	rabbit_password=321321
+
+修改`/etc/nova/api-paste.ini`
+
+	[filter:authtoken]
+	auth_host = controller
+	admin_tenant_name = service
+	admin_user = nova
+	admin_password = nova_password
+
+创建目录
+
+	mkdir -p /var/log/nova
+
+初始化数据库
+
+	nova-manage db sync
+
+创建用户
+
+	keystone user-create --name=nova --pass=nova_password
+	keystone user-role-add --user=nova --tenant=service --role=admin
+
+创建Service和Endpoint
+
+	$ keystone service-create --name=nova --type=compute --description="Nova Compute Service"
+	+-------------+----------------------------------+
+	|   Property  |              Value               |
+	+-------------+----------------------------------+
+	| description |       Nova Compute Service       |
+	|      id     | 96b9ce17137744e58094009ac23f1d63 |
+	|     name    |               nova               |
+	|     type    |             compute              |
+	+-------------+----------------------------------+
+
+	$ keystone endpoint-create --service-id=96b9ce17137744e58094009ac23f1d63 \
+		--publicurl='http://controller:8774/v2/%(tenant_id)s' \
+		--internalurl='http://controller:8774/v2/%(tenant_id)s' \
+		--adminurl='http://controller:8774/v2/%(tenant_id)s'
+	+-------------+-----------------------------------------+
+	|   Property  |                  Value                  |
+	+-------------+-----------------------------------------+
+	|   adminurl  | http://controller:8774/v2/%(tenant_id)s |
+	|      id     |     6d78f648a5a54c3dbb745480b9faa241    |
+	| internalurl | http://controller:8774/v2/%(tenant_id)s |
+	|  publicurl  | http://controller:8774/v2/%(tenant_id)s |
+	|    region   |                regionOne                |
+	|  service_id |     96b9ce17137744e58094009ac23f1d63    |
+	+-------------+-----------------------------------------+
+
+安装`noVNC`
+
+	# commit 75d69b9f621606c3b2db48e4778ff41307f65c6d
+	git clone https://github.com/kanaka/noVNC.git
+	
+	mkdir -p /usr/share/novnc
+	cp -af noVNC/* /usr/share/novnc/
+
+启动服务
+
+	nova-api
+	nova-cert
+	nova-consoleauth
+	nova-scheduler
+	nova-conductor
+	nova-novncproxy
+
+验证一下
+
+	$ nova-manage service list
+	Binary           Host                                 Zone             Status     State Updated_At
+	nova-cert        controller                           internal         enabled    :-)   2013-11-10 08:12:38
+	nova-consoleauth controller                           internal         enabled    :-)   2013-11-10 08:12:43
+	nova-scheduler   controller                           internal         enabled    :-)   2013-11-10 08:12:36
+	nova-conductor   controller                           internal         enabled    :-)   2013-11-10 08:12:38
+	
+	$ nova-manage version
+	2014.1
+
+	$ nova image-list
+	+--------------------------------------+--------------+--------+--------+
+	| ID                                   | Name         | Status | Server |
+	+--------------------------------------+--------------+--------+--------+
+	| 4d1a5832-f229-4697-a889-39311f2611ef | Cirros 0.3.0 | ACTIVE |        |
+	+--------------------------------------+--------------+--------+--------+
+	
+	$ glance image-list
+	+--------------------------------------+--------------+-------------+------------------+---------+--------+
+	| ID                                   | Name         | Disk Format | Container Format | Size    | Status |
+	+--------------------------------------+--------------+-------------+------------------+---------+--------+
+	| 4d1a5832-f229-4697-a889-39311f2611ef | Cirros 0.3.0 | qcow2       | bare             | 9761280 | active |
+	+--------------------------------------+--------------+-------------+------------------+---------+--------+
+
+###Compute Node
+
+安装依赖
+
+	apt-get install python-libvirt guestmount
+
+修改`/etc/nova/nova.conf`
+
+	[DEFAULT]
+
+	sql_connection = mysql://nova:nova_password@controller/nova
+
+	my_ip=192.168.1.11
+	vncserver_listen=0.0.0.0
+	vncserver_proxyclient_address=10.0.0.11
+
+	glance_host=controller
+
+	libvirt_type=qemu
+	compute_driver=libvirt.LibvirtDriver
+
+	state_path=/var/lib/nova
+	lock_path=/var/lock/nova
+
+	# NETWORK
+	network_manager=nova.network.manager.FlatDHCPManager
+	firewall_driver=nova.virt.libvirt.firewall.IptablesFirewallDriver
+	share_dhcp_address=True
+	force_dhcp_release=True
+	network_size=254
+	allow_same_net_traffic=False
+	send_arp_for_ha=True
+	multi_host=True
+	public_interface=eth0
+	flat_interface=eth1
+	flat_network_bridge=br100
+	dhcpbridge_flagfile=/etc/nova/nova.conf
+
+	# RABBITMQ
+	rabbit_host=controller
+	rabbit_port=5672
+	rabbit_userid=guest
+	rabbit_password=321321
+修改`/etc/nova/api-paste.ini`
+
+	[filter:authtoken]
+	auth_host = controller
+	admin_tenant_name = service
+	admin_user = nova
+	admin_password = nova_password
+
+创建目录
+
+	mkdir -p /var/lib/nova/instances
+
+启动服务
+
+	nova-compute
+	nova-network
+
+
+###配置网络
+
+在任意Node上导入环境变量，执行`nova`命令即可进行全局设置
+
+	$ source keystonerc_admin
+
+创建虚机使用的网络
+
+	$ nova network-create vmnet --fixed-range-v4=99.0.0.0/24 --bridge-interface=br100 --multi-host=T
+
+	$ nova network-list
+	+--------------------------------------+-------+-------------+
+	| ID                                   | Label | Cidr        |
+	+--------------------------------------+-------+-------------+
+	| dfd95c9a-4887-42f5-9fa3-fd0e413dd0f4 | vmnet | 99.0.0.0/24 |
+	+--------------------------------------+-------+-------------+
+
+注入SSH公钥到虚机并确认（需要虚机Image支持）
+
+	$ ssh-keygen      # 一路回车
+	$ nova keypair-add --pub-key ~/.ssh/id_rsa.pub mykey
+	
+	$ nova keypair-list
+	+-------+-------------------------------------------------+
+	| Name  | Fingerprint                                     |
+	+-------+-------------------------------------------------+
+	| mykey | 1d:99:5c:70:02:a2:c2:28:cb:be:11:4b:54:51:cb:ae |
+	+-------+-------------------------------------------------+
+
+放开SSH和ICMP（Ping）的访问限制
+
+	$ nova secgroup-list
+	+----+---------+-------------+
+	| Id | Name    | Description |
+	+----+---------+-------------+
+	| 1  | default | default     |
+	+----+---------+-------------+
+	
+	$ nova secgroup-add-rule default tcp 22 22 0.0.0.0/0
+	$ nova secgroup-add-rule default icmp -1 -1 0.0.0.0/0
+	
+	$ nova secgroup-list-rules default
+	+-------------+-----------+---------+-----------+--------------+
+	| IP Protocol | From Port | To Port | IP Range  | Source Group |
+	+-------------+-----------+---------+-----------+--------------+
+	| tcp         | 22        | 22      | 0.0.0.0/0 |              |
+	| icmp        | -1        | -1      | 0.0.0.0/0 |              |
+	+-------------+-----------+---------+-----------+--------------+
+	
+确认允许IPv4转发
+
+	$ sysctl net.ipv4.ip_forward
+	net.ipv4.ip_forward = 0
+
+	$ sysctl -w net.ipv4.ip_forward=1
+
+
+###创建虚机
+
+	$ nova secgroup-list
+	+----+---------+-------------+
+	| Id | Name    | Description |
+	+----+---------+-------------+
+	| 1  | default | default     |
+	+----+---------+-------------+
+
+	$ nova flavor-list 
+	+----+-----------+-----------+------+-----------+------+-------+-------------+-----------+
+	| ID | Name      | Memory_MB | Disk | Ephemeral | Swap | VCPUs | RXTX_Factor | Is_Public |
+	+----+-----------+-----------+------+-----------+------+-------+-------------+-----------+
+	| 1  | m1.tiny   | 512       | 1    | 0         |      | 1     | 1.0         | True      |
+	| 2  | m1.small  | 2048      | 20   | 0         |      | 1     | 1.0         | True      |
+	| 3  | m1.medium | 4096      | 40   | 0         |      | 2     | 1.0         | True      |
+	| 4  | m1.large  | 8192      | 80   | 0         |      | 4     | 1.0         | True      |
+	| 5  | m1.xlarge | 16384     | 160  | 0         |      | 8     | 1.0         | True      |
+	+----+-----------+-----------+------+-----------+------+-------+-------------+-----------+
+
+	$ nova image-list
+	+--------------------------------------+--------------+--------+--------+
+	| ID                                   | Name         | Status | Server |
+	+--------------------------------------+--------------+--------+--------+
+	| 5ef6d78b-dd3e-4575-ad52-692552f3ddd3 | Cirros 0.3.0 | ACTIVE |        |
+	+--------------------------------------+--------------+--------+--------+
+
+	$ nova boot --flavor=1 --key_name=mykey --image=5ef6d78b-dd3e-4575-ad52-692552f3ddd3 --security_group=default cirros
+
+
+查看虚机状态(启动需要一些时间)
+
+	$ nova list	
+	+--------------------------------------+--------+--------+------------+-------------+-------------------+
+	| ID                                   | Name   | Status | Task State | Power State | Networks          |
+	+--------------------------------------+--------+--------+------------+-------------+-------------------+
+	| 2c0c5c9b-2511-4616-8186-3843b0800da1 | cirros | BUILD  | spawning   | NOSTATE     | private=99.0.0.2  |
+	+--------------------------------------+--------+--------+------------+-------------+-------------------+
+	
+	$ nova list	
+	+--------------------------------------+--------+--------+------------+-------------+-------------------+
+	| ID                                   | Name   | Status | Task State | Power State | Networks          |
+	+--------------------------------------+--------+--------+------------+-------------+-------------------+
+	| 2c0c5c9b-2511-4616-8186-3843b0800da1 | cirros | ACTIVE | None       | Running     | private=99.0.0.2  |
+	+--------------------------------------+--------+--------+------------+-------------+-------------------+
+
+查看引导信息（如果启动失败，能看到报错信息）
+
+	$ nova console-log cirros
+	... （此处省略N行）
+	Oct 17 10:02:00 cirros kern.info kernel: [    6.980753] ip_tables: (C) 2000-2006 Netfilter Core Team
+	Oct 17 10:02:13 cirros kern.debug kernel: [   19.977012] eth0: no IPv6 routers present
+	Oct 17 10:03:29 cirros authpriv.info dropbear[301]: Running in background
+	############ debug end   ##############
+	  ____               ____  ____
+	 / __/ __ ____ ____ / __ \/ __/
+	/ /__ / // __// __// /_/ /\ \ 
+	\___//_//_/  /_/   \____/___/ 
+	   http://cirros-cloud.net
+
+
+	login as 'cirros' user. default password: 'cubswin:)'. use 'sudo' for root.
+	cirros login: 
+
+虚机应该可以被Ping通，然后SSH登陆（密码：`cubswin:)`），最后从虚机应该可以Ping通公网IP（如：`8.8.8.8`）
+
+	ssh cirros@99.0.0.2
+
+> 如果网络有任何异常，首先重启本机的`nova-network`和`nova-compute`服务，甚至重启系统，再作调试；重启后需要等待一会儿，等nova完成网络配置。  
+> 通过`ifconfig`可以看到，增加了1个`br100`（通过`ip a`可看到和它`eth1`桥接了）和为每个虚机增加一个`vnet`（`brctl show`可看到所有桥接在一起的设备）
+
+
+
+##安装Horizon
+
+> 因为之前将`noVNC`安装在了`Controller Node`上，所以这里将`Horizon`也安装在它上面
+
+获取源码
+
+	# commit ae6abf715701b7ce026efb16c7af20b16cc90ee2 
+	git clone https://github.com/openstack/horizon.git
+
+安装
+
+	cd horizon
+	pip install -r requirements.txt
+	python setup.py install
+	cd ..
+
+创建配置文件
+
+	cd horizon/openstack_dashboard/local
+	cp local_settings.py.example local_settings.py
+	cd -
+
+修改`/etc/openstack-dashboard/local_settings.py`（指定Identity Service所在的机器）
+
+	￼OPENSTACK_HOST = "controller"
+
+创建默认角色`Member`
+
+	keystone role-create --name Member
+
+启动（使用空闲端口）
+
+	horizon/manage.py runserver 0.0.0.0:8888
+
+访问页面
+
+* http://localhost:8888/  （登录：`admin`,`admin_password`）
+
+###通过Web访问`VNC Console`
+
+要想Horizon的Console页面正常显示，需要`noVNC`，原理如下：
+
+	vnc.html ---> nova-novncproxy(6080) ---> vnc server(5900)
+
+安装
+
+	# commit 75d69b9f621606c3b2db48e4778ff41307f65c6d
+	git clone https://github.com/kanaka/noVNC.git
+	
+	mkdir -p /usr/share/novnc
+	cp -af noVNC/* /usr/share/novnc/
+
+确认启动服务
+
+	nova-novncproxy
+	nova-consoleauth
+
+> 如果不将noVNC安装到系统中，也可以如下方式启动：
+> 
+> 		noVNC/utils/nova-novncproxy --config-file /etc/nova/nova.conf --web `pwd`/noVNC/
+
+###通过Client访问`VNC Console`
+
+工作原理
+	
+	xvpvncviewer ---> nova-xvpvncproxy(6081) ---> vnc server(5900)
+
+安装
+
+	# commit fc292084732bd20bc69746a0567001293b63608f
+	git clone https://github.com/cloudbuilders/nova-xvpvncviewer
+
+	cd nova-xvpvncviewer/viewer
+	make
+
+确认启动服务
+
+	nova-xvpvncproxy
+	nova-consoleauth
+
+手动获取URL
+
+	nova get-vnc-console [VM_ID or VM_NAME] xvpvnc
+
+启动客户端
+
+	java -jar VncViewer.jar url [URL]
+
+###使用Apache提供Web服务
+
+见官方文档
+
+
 
 ## 安装Swift
 
@@ -364,7 +951,6 @@ To distribute the partitions across the drives in the ring
 
 	. ~/keystonerc_admin
 	
-
 创建用户、租户（admin角色前面已经创建）
 
 	keystone tenant-create --name services
@@ -612,142 +1198,6 @@ To distribute the partitions across the drives in the ring
 	$ swift list c2
 	data3.file
 
-## 安装Glance
-
-获取源码
-
-	# commit 4e7c8e6d553e9d187b6c7f6eb284b4b7d63cfd74 
-	git clone git://github.com/openstack/glance.git
-
-	# commit 518cb2508d6557f1e8f1c8c480720e46fef4bae9 
-	git clone git://github.com/openstack/python-glanceclient.git 
-	
-安装
-
-	cd glance
-	pip install -r requirements.txt
-	python setup.py install
-
-	cd ../python-glanceclient
-	pip install -r requirements.txt
-	python setup.py install
-	cd ..
-	
-创建数据库
-
-	mysql -u root -p
-	create database glance;
-	quit
-	
-复制配置文件
-
-	mkdir -p /etc/glance
-	cp glance/etc/* /etc/glance/
-
-修改`/etc/glance/glance-api.conf`
-	
-	[DEFAULT]
-	# default_store = file
-	default_store = swift
-	
-	sql_connection = mysql://root:111111@127.0.0.1/glance
-
-	swift_store_auth_address = http://127.0.0.1:35357/v2.0/
-	swift_store_user = admin:admin
-	swift_store_key = 123456
-	swift_store_create_container_on_put = True
-	
-	[keystone_authtoken]
-	admin_tenant_name = admin
-	admin_user = admin
-	admin_password = 123456
-	
-	[paste_deploy]
-	flavor = keystone
-
-修改`/etc/glance/glance-registry.conf`
-
-	[DEFAULT]
-	#sql_connection = sqlite:///glance.sqlite
-	sql_connection = mysql://root:111111@127.0.0.1/glance
-	
-	[keystone_authtoken]
-	admin_tenant_name = admin
-	admin_user = admin
-	admin_password = 123456
-	
-	[paste_deploy]
-	flavor = keystone
-	
-初始化数据库
-
-	mkdir -p /var/log/glance
-	glance-manage db_sync
-
-创建service和endpoint
-
-	keystone service-create --name=glance --type=image --description="Glance Image Service"
-	+-------------+----------------------------------+
-	|   Property  |              Value               |
-	+-------------+----------------------------------+
-	| description |       Glance Image Service       |
-	|      id     | c9f6e93cfd384a27bdac595be296ad4a |
-	|     name    |              glance              |
-	|     type    |              image               |
-	+-------------+----------------------------------+	
-	keystone endpoint-create --service_id c9f6e93cfd384a27bdac595be296ad4a \
-	--publicurl http://localhost:9292/v1 \
-	--adminurl http://localhost:9292/v1 \
-	--internalurl http://localhost:9292/v1
-	+-------------+----------------------------------+
-	|   Property  |              Value               |
-	+-------------+----------------------------------+
-	|   adminurl  |     http://localhost:9292/v1     |
-	|      id     | c052904b25ac44c785c9ecb4cd53507e |
-	| internalurl |     http://localhost:9292/v1     |
-	|  publicurl  |     http://localhost:9292/v1     |
-	|    region   |            regionOne             |
-	|  service_id | c9f6e93cfd384a27bdac595be296ad4a |
-	+-------------+----------------------------------+
-
-启动服务
-
-	glance-api --config-file /etc/glance/glance-api.conf
-	glance-registry --config-file /etc/glance/glance-registry.conf
-
-测试一下
-
-	. ~/keystonerc_admin
-
-	glance image-list
-	+----+------+-------------+------------------+------+--------+
-	| ID | Name | Disk Format | Container Format | Size | Status |
-	+----+------+-------------+------------------+------+--------+
-	+----+------+-------------+------------------+------+--------+
-
-增加image
-
-	wget https://launchpad.net/cirros/trunk/0.3.0/+download/cirros-0.3.0-x86_64-disk.img
-	glance image-create --name="Cirros 0.3.0" \
-		--disk-format=qcow2 \
-		--container-format bare < cirros-0.3.0-x86_64-disk.img
-
-查看一下
-
-	$ glance image-list
-	+--------------------------------------+--------------+-------------+------------------+----------+--------+
-	| ID                                   | Name         | Disk Format | Container Format | Size     | Status |
-	+--------------------------------------+--------------+-------------+------------------+----------+--------+
-	| 5ef6d78b-dd3e-4575-ad52-692552f3ddd3 | Cirros 0.3.0 | qcow2       | bare             | 13147648 | active |
-	+--------------------------------------+--------------+-------------+------------------+----------+--------+
-
-	$ swift list
-	c1
-	c2
-	glance
-
-	$ swift list glance
-	5ef6d78b-dd3e-4575-ad52-692552f3ddd3
 
 
 ##安装Cinder
@@ -916,551 +1366,6 @@ To distribute the partitions across the drives in the ring
 	| 7e7a503c-0f47-4a74-88a6-e4fd84a9592b | available |     test     |  1   |     None    |  False   |             |
 	+--------------------------------------+-----------+--------------+------+-------------+----------+-------------+
 
-##安装Nova
-
-获取源码
-
-	# commit 042dc449701ad6fdec04c475b309dd0f072f61ab 
-	git clone git://github.com/openstack/nova.git
-	
-	# commit 1d2263dae339590b60250793bc81ec5776845060 
-	git clone https://github.com/openstack/python-novaclient.git
-	
-安装源码
-
-	cd nova
-	pip install -r requirements.txt
-	python setup.py  install
-	cd ..
-	
-	cd python-novaclient
-	pip install -r requirements.txt
-	python setup.py  install
-	cd ..
-
-安装依赖
-
-	apt-get install python-libvirt guestmount bridge-utils dnsmasq-utils
-
-安装配置文件
-
-	cp -af  nova/etc/nova /etc
-	cp /etc/nova/nova.conf.sample /etc/nova/nova.conf
-	
-###配置数据库
-
-创建nova的数据库
-
-	mysql -u root -p
-	create database nova;
-	quit
-
-###网络结构
-
-本实验使用`FlatDHCP`网络模型，如下；
-
-	VMs.eth0 <---> vnet1 <---> br100 <---> Host.eth1
-	Host.eth0 <---> Internet
-
-多个虚机通过`vnet1`形成一个局域网，该内部网络通过`br100`与Host机的`eth1`通信；
-
-为了简化网络结构，`eth1`不接外网（不设网关即可），`eth0`可访问外网
-
-这里为了方便演示，删除Ubuntu的图形网络管理工具`NetworkManager`
-
-	dpkg -P network-manager-gnome network-manager
-
-手动修改网络配置文件`/etc/network/interfaces`
-
-	auto lo
-	iface lo inet loopback
-	
-	auto eth0
-	iface eth0 inet dhcp
-	
-	auto eth1
-	iface eth1 inet static
-	address 192.168.1.11
-	netmask 255.255.255.0
-	
-重启网络，使设置生效
-
-	/etc/init.d/networking restart
-
-然后查看一下
-
-	$ ifconfig
-	... (省略不相关信息)
-	eth0      Link encap:Ethernet  HWaddr 00:25:90:97:68:82
-	          inet addr:192.168.1.148  Bcast:192.168.1.255  Mask:255.255.255.0
-	          inet6 addr: fe80::225:90ff:fe97:6882/64 Scope:Link
-	          UP BROADCAST RUNNING MULTICAST  MTU:1500  Metric:1
-	          RX packets:143839395 errors:0 dropped:0 overruns:7660706 frame:0
-	          TX packets:78108678 errors:0 dropped:0 overruns:0 carrier:0
-	          collisions:0 txqueuelen:1000 
-	          RX bytes:56720182566 (56.7 GB)  TX bytes:7408859473 (7.4 GB)
-	          Memory:df720000-df740000
-	
-	eth1      Link encap:Ethernet  HWaddr 00:25:90:97:68:83  
-	          inet addr:192.168.1.11  Bcast:192.168.1.255  Mask:255.255.255.0
-	          inet6 addr: fe80::225:90ff:fe97:6883/64 Scope:Link
-	          UP BROADCAST RUNNING PROMISC MULTICAST  MTU:1500  Metric:1
-	          RX packets:89060556 errors:0 dropped:0 overruns:8050921 frame:0
-	          TX packets:78019479 errors:0 dropped:0 overruns:0 carrier:0
-	          collisions:0 txqueuelen:1000 
-	          RX bytes:8384089287 (8.3 GB)  TX bytes:7110520607 (7.1 GB)
-	          Memory:df700000-df720000
-
-###配置Nova
-
-`/etc/nova/nova.conf` 全部配置如下：
-
-	# LOGS/STATE
-	verbose=True
-	logdir=/var/log/nova
-	state_path=/var/lib/nova
-	lock_path=/var/lock/nova
-	rootwrap_config=/etc/nova/rootwrap.conf
-
-	# SCHEDULER
-	compute_scheduler_driver=nova.scheduler.filter_scheduler.FilterScheduler
-
-	# VOLUMES
-	volume_api_class=nova.volume.cinder.API
-	volume_driver=nova.volume.driver.ISCSIDriver
-	volume_group=cinder-volumes
-	volume_name_template=volume-%s
-	iscsi_helper=tgtadm
-
-	# DATABASE
-	sql_connection=mysql://root:111111@127.0.0.1/nova
-
-	# COMPUTE
-	libvirt_type=qemu
-	compute_driver=libvirt.LibvirtDriver
-	instance_name_template=instance-%08x
-	api_paste_config=/etc/nova/api-paste.ini
-
-	# COMPUTE/APIS: if you have separate configs for separate services
-	# this flag is required for both nova-api and nova-compute
-	#allow_resize_to_same_host=True
-
-	# APIS
-	osapi_compute_extension=nova.api.openstack.compute.contrib.standard_extensions
-	ec2_dmz_host=127.0.0.1
-	s3_host=127.0.0.1
-	enabled_apis=ec2,osapi_compute,metadata
-
-	# RABBITMQ
-	rabbit_host=localhost
-	rabbit_port=5672
-	rabbit_userid=guest
-	rabbit_password=321321
-	rabbit_virtual_host=/
-
-	# GLANCE
-	image_service=nova.image.glance.GlanceImageService
-	glance_api_servers=127.0.0.1:9292
-
-	# NETWORK
-	network_manager=nova.network.manager.FlatDHCPManager
-	force_dhcp_release=True
-	dhcpbridge_flagfile=/etc/nova/nova.conf
-	firewall_driver=nova.virt.libvirt.firewall.IptablesFirewallDriver
-	# Change my_ip to match each host
-	my_ip=192.168.1.148
-	public_interface=eth0
-	#vlan_interface=eth0
-	flat_interface=eth1
-	flat_network_bridge=br100
-	fixed_range=192.168.100.0/24
-	use_ipv6=false
-
-	# NOVNC CONSOLE
-	vnc_enabled = true
-	vncserver_listen = 0.0.0.0
-	vncserver_proxyclient_address = 192.168.1.11
-	xvpvncproxy_base_url = http://192.168.1.148:6081/console
-	novncproxy_base_url = http://192.168.1.148:6080/vnc_auto.html
-
-	# AUTHENTICATION
-	auth_strategy=keystone
-	[keystone_authtoken]
-	auth_host = 127.0.0.1
-	auth_port = 35357
-	auth_protocol = http
-	admin_tenant_name = admin
-	admin_user = admin
-	admin_password = admin
-	signing_dirname = /tmp/keystone-signing-nova
-
-> 注意这几个IP
->
->	my_ip=192.168.1.148
->	vncserver_listen = 0.0.0.0
->	vncserver_proxyclient_address = 192.168.1.11
->	xvpvncproxy_base_url = http://192.168.1.148:6081/console
->	novncproxy_base_url = http://192.168.1.148:6080/vnc_auto.html
-
-修改`/etc/nova/api-paste.ini`
-
-	[filter:authtoken]
-	admin_tenant_name = admin
-	admin_user = admin
-	admin_password = 123456
-
-创建相应目录
-
-	mkdir -p /var/log/nova
-	mkdir -p /var/lib/nova/instances
-
-###初始化数据库
-
-	nova-manage db sync
-	
-###启动服务
-
-	nova-api
-	nova-conductor
-	nova-network
-	nova-scheduler
-	nova-compute
-
-> 注意：终端必须使用英文环境
-
-###创建Endpoint
-
-	keystone service-create --name=nova --type=compute --description="Nova Compute Service"
-	+-------------+----------------------------------+
-	|   Property  |              Value               |
-	+-------------+----------------------------------+
-	| description |       Nova Compute Service       |
-	|      id     | e8f13ca5e3de451887059358cce1071a |
-	|     name    |               nova               |
-	|     type    |             compute              |
-	+-------------+----------------------------------+
-		
-	keystone endpoint-create \
-		--service-id=e8f13ca5e3de451887059358cce1071a \
-		--publicurl='http://localhost:8774/v2/%(tenant_id)s' \
-		--internalurl='http://localhost:8774/v2/%(tenant_id)s' \
-		--adminurl='http://localhost:8774/v2/%(tenant_id)s'
-	+-------------+----------------------------------------+
-	|   Property  |                 Value                  |
-	+-------------+----------------------------------------+
-	|   adminurl  | http://localhost:8774/v2/%(tenant_id)s |
-	|      id     |    30c72b9d0d794fa79201bbdd2aa10fa8    |
-	| internalurl | http://localhost:8774/v2/%(tenant_id)s |
-	|  publicurl  | http://localhost:8774/v2/%(tenant_id)s |
-	|    region   |               regionOne                |
-	|  service_id |    e8f13ca5e3de451887059358cce1071a    |
-	+-------------+----------------------------------------+
-	
-###验证一下
-
-	$ nova-manage service list
-	Binary           Host                                 Zone             Status     State Updated_At
-	nova-conductor   precise64                            internal         enabled    :-)   2013-10-17 15:52:40
-	nova-network     precise64                            internal         enabled    :-)   2013-10-17 15:52:47
-	nova-scheduler   precise64                            internal         enabled    :-)   2013-10-17 15:52:43
-	nova-compute     precise64                            nova             enabled    :-)   2013-10-17 15:52:49
-
-	$ nova-manage version
-	2014.1
-
-`nova image-list`输出结果应该和`glance image-list`相同
-
-	$ nova image-list
-	+--------------------------------------+------------+--------+--------+
-	| ID                                   | Name       | Status | Server |
-	+--------------------------------------+------------+--------+--------+
-	| 1a736b75-3e49-4fed-97f1-f3257a75b3b8 | test image | ACTIVE |        |
-	+--------------------------------------+------------+--------+--------+
-	
-	$ glance image-list
-	+--------------------------------------+------------+-------------+------------------+------+--------+
-	| ID                                   | Name       | Disk Format | Container Format | Size | Status |
-	+--------------------------------------+------------+-------------+------------------+------+--------+
-	| 1a736b75-3e49-4fed-97f1-f3257a75b3b8 | test image | aki         | aki              | 1024 | active |
-	+--------------------------------------+------------+-------------+------------------+------+--------+
-
-###配置网络
-
-将网卡`eth1`设为混杂模式`promiscuous mode`
-
-	ip link set eth1 promisc on
-	
-增加`br100`的配置到`/etc/network/interfaces`
-
-	# Bridge network interface for VM networks
-	auto br100
-	iface br100 inet static
-	address 192.168.100.1
-	netmask 255.255.255.0
-	bridge_stp off
-	bridge_fd 0
-
-增加桥接设备（取名`br100`），重启网络生效
-
-	brctl addbr br100
-	/etc/init.d/networking restart
-
-检查一下
-
-	$ ifconfig
-	br100     Link encap:Ethernet  HWaddr 00:25:90:97:68:83  
-	          inet addr:192.168.100.1  Bcast:192.168.100.255  Mask:255.255.255.0
-	          inet6 addr: fe80::90a5:deff:fe52:ccfd/64 Scope:Link
-	          UP BROADCAST RUNNING MULTICAST  MTU:1500  Metric:1
-	          RX packets:3977 errors:0 dropped:0 overruns:0 frame:0
-	          TX packets:1799 errors:0 dropped:0 overruns:0 carrier:0
-	          collisions:0 txqueuelen:0 
-	          RX bytes:455641 (455.6 KB)  TX bytes:279552 (279.5 KB)
-	
-	eth0      Link encap:Ethernet  HWaddr 00:25:90:97:68:82  
-	          inet addr:192.168.1.148  Bcast:192.168.1.255  Mask:255.255.255.0
-	          inet6 addr: fe80::225:90ff:fe97:6882/64 Scope:Link
-	          UP BROADCAST RUNNING MULTICAST  MTU:1500  Metric:1
-	          RX packets:143840605 errors:0 dropped:0 overruns:7660706 frame:0
-	          TX packets:78109048 errors:0 dropped:0 overruns:0 carrier:0
-	          collisions:0 txqueuelen:1000 
-	          RX bytes:56720315738 (56.7 GB)  TX bytes:7408903837 (7.4 GB)
-	          Memory:df720000-df740000
-	
-	eth1      Link encap:Ethernet  HWaddr 00:25:90:97:68:83  
-	          inet6 addr: fe80::225:90ff:fe97:6883/64 Scope:Link
-	          UP BROADCAST RUNNING PROMISC MULTICAST  MTU:1500  Metric:1
-	          RX packets:89230246 errors:0 dropped:0 overruns:8050921 frame:0
-	          TX packets:78019553 errors:0 dropped:0 overruns:0 carrier:0
-	          collisions:0 txqueuelen:1000 
-	          RX bytes:8428094346 (8.4 GB)  TX bytes:7110538291 (7.1 GB)
-	          Memory:df700000-df720000 
-	
-	virbr0    Link encap:Ethernet  HWaddr b6:f1:f3:8f:63:e6  
-	          inet addr:192.168.122.1  Bcast:192.168.122.255  Mask:255.255.255.0
-	          UP BROADCAST MULTICAST  MTU:1500  Metric:1
-	          RX packets:0 errors:0 dropped:0 overruns:0 frame:0
-	          TX packets:0 errors:0 dropped:0 overruns:0 carrier:0
-	          collisions:0 txqueuelen:0 
-	          RX bytes:0 (0.0 B)  TX bytes:0 (0.0 B)
-	
-	vnet1     Link encap:Ethernet  HWaddr fe:16:3e:52:85:28  
-	          inet6 addr: fe80::fc16:3eff:fe52:8528/64 Scope:Link
-	          UP BROADCAST RUNNING MULTICAST  MTU:1500  Metric:1
-	          RX packets:524 errors:0 dropped:0 overruns:0 frame:0
-	          TX packets:3608 errors:0 dropped:0 overruns:0 carrier:0
-	          collisions:0 txqueuelen:500 
-	          RX bytes:96902 (96.9 KB)  TX bytes:435329 (435.3 KB)
-
-`eth1`目前看不到IP地址，可通过如下方式查看：
-
-	$ ip a
-	14: br100: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP 
-	    link/ether 00:25:90:97:68:83 brd ff:ff:ff:ff:ff:ff
-	    inet 192.168.100.1/24 brd 192.168.100.255 scope global br100
-	    inet 192.168.1.11/24 brd 192.168.1.255 scope global br100
-	    inet6 fe80::90a5:deff:fe52:ccfd/64 scope link 
-	       valid_lft forever preferred_lft forever	
-
-
-###创建虚机使用的内部网络
-
-	nova-manage network create private --fixed_range_v4=192.168.100.0/24 --bridge_interface=br100
-
-###放开访问限制
-
-查看安全分组
-
-	$ nova secgroup-list
-	+----+---------+-------------+
-	| Id | Name    | Description |
-	+----+---------+-------------+
-	| 1  | default | default     |
-	+----+---------+-------------+
-	
-放开SSH和ICMP（Ping）的访问限制
-	
-	$ nova secgroup-add-rule default tcp 22 22 0.0.0.0/0
-	$ nova secgroup-add-rule default icmp -1 -1 0.0.0.0/0
-	$ nova secgroup-list-rules default
-
-注入SSH公钥到虚机并确认（需要虚机Image支持）
-
-	$ ssh-keygen -t rsa       # 一路回车
-	$ nova keypair-add --pub-key ~/.ssh/id_rsa.pub mykey
-	
-	$ nova keypair-list
-	$ ssh-keygen -l -f ~/.ssh/id_rsa.pub
-
-###打开`ip_v4`转发
-
-先看看是否已经打开
-
-	$ sysctl net.ipv4.ip_forward
-	net.ipv4.ip_forward = 1
-	
-临时开启
-
-	$ sysctl -w net.ipv4.ip_forward=1
-
-###创建虚机
-
-先确认所有服务都在运行(`libvirtd`,`nova-api`,`nova-scheduler`,`nova-compute`,`nova-network`)
-
-	$ ps -ef | grep libvirtd
-	root     19970     1  0 14:04 ?        00:00:05 /usr/sbin/libvirtd -d
-
-	$ nova-manage service list
-	Binary           Host                                 Zone             Status     State Updated_At
-	nova-conductor   precise64                            internal         enabled    :-)   2013-10-17 15:52:40
-	nova-network     precise64                            internal         enabled    :-)   2013-10-17 15:52:47
-	nova-scheduler   precise64                            internal         enabled    :-)   2013-10-17 15:52:43
-	nova-compute     precise64                            nova             enabled    :-)   2013-10-17 15:52:49
-
-启动实例
-
-	$ nova secgroup-list
-	+----+---------+-------------+
-	| Id | Name    | Description |
-	+----+---------+-------------+
-	| 1  | default | default     |
-	+----+---------+-------------+
-
-	$ nova flavor-list 
-	+----+-----------+-----------+------+-----------+------+-------+-------------+-----------+
-	| ID | Name      | Memory_MB | Disk | Ephemeral | Swap | VCPUs | RXTX_Factor | Is_Public |
-	+----+-----------+-----------+------+-----------+------+-------+-------------+-----------+
-	| 1  | m1.tiny   | 512       | 1    | 0         |      | 1     | 1.0         | True      |
-	| 2  | m1.small  | 2048      | 20   | 0         |      | 1     | 1.0         | True      |
-	| 3  | m1.medium | 4096      | 40   | 0         |      | 2     | 1.0         | True      |
-	| 4  | m1.large  | 8192      | 80   | 0         |      | 4     | 1.0         | True      |
-	| 5  | m1.xlarge | 16384     | 160  | 0         |      | 8     | 1.0         | True      |
-	+----+-----------+-----------+------+-----------+------+-------+-------------+-----------+
-
-	$ nova image-list
-	+--------------------------------------+--------------+--------+--------+
-	| ID                                   | Name         | Status | Server |
-	+--------------------------------------+--------------+--------+--------+
-	| 5ef6d78b-dd3e-4575-ad52-692552f3ddd3 | Cirros 0.3.0 | ACTIVE |        |
-	+--------------------------------------+--------------+--------+--------+
-
-	$ nova boot --flavor 1 --image 5ef6d78b-dd3e-4575-ad52-692552f3ddd3 --security_group default cirros
-
-查看实例状态(启动需要一些时间)
-
-	$ nova list	
-	+--------------------------------------+--------+--------+------------+-------------+-----------------------+
-	| ID                                   | Name   | Status | Task State | Power State | Networks              |
-	+--------------------------------------+--------+--------+------------+-------------+-----------------------+
-	| 2c0c5c9b-2511-4616-8186-3843b0800da1 | cirros | BUILD  | spawning   | NOSTATE     | private=192.168.100.2 |
-	+--------------------------------------+--------+--------+------------+-------------+-----------------------+
-	
-	$ nova list	
-	+--------------------------------------+--------+--------+------------+-------------+-----------------------+
-	| ID                                   | Name   | Status | Task State | Power State | Networks              |
-	+--------------------------------------+--------+--------+------------+-------------+-----------------------+
-	| 2c0c5c9b-2511-4616-8186-3843b0800da1 | cirros | ACTIVE | None       | Running     | private=192.168.100.2 |
-	+--------------------------------------+--------+--------+------------+-------------+-----------------------+
-
-查看引导信息（如果启动失败，能看到报错信息）
-
-	$ nova console-log cirros
-	... （此处省略N行）
-	Oct 17 10:02:00 cirros kern.info kernel: [    6.980753] ip_tables: (C) 2000-2006 Netfilter Core Team
-	Oct 17 10:02:13 cirros kern.debug kernel: [   19.977012] eth0: no IPv6 routers present
-	Oct 17 10:03:29 cirros authpriv.info dropbear[301]: Running in background
-	############ debug end   ##############
-	  ____               ____  ____
-	 / __/ __ ____ ____ / __ \/ __/
-	/ /__ / // __// __// /_/ /\ \ 
-	\___//_//_/  /_/   \____/___/ 
-	   http://cirros-cloud.net
-
-
-	login as 'cirros' user. default password: 'cubswin:)'. use 'sudo' for root.
-	cirros login: 
-
-虚机应该可以Ping通，然后SSH登陆（密码：`cubswin:)`），最后从虚机应该可以Ping通公网IP
-
-	ssh cirros@192.168.100.2
-
-##安装Horizon
-
-获取源码
-
-	# commit ae6abf715701b7ce026efb16c7af20b16cc90ee2 
-	git clone https://github.com/openstack/horizon.git
-
-安装
-
-	cd horizon
-	pip install -r requirements.txt
-	python setup.py install
-	cd ..
-
-创建配置文件
-
-	cd horizon/openstack_dashboard/local
-	cp local_settings.py.example local_settings.py
-	cd -
-	
-创建默认角色`Member`
-
-	keystone role-create --name Member
-
-启动（使用空闲端口）
-
-	horizon/manage.py runserver 0.0.0.0:8888
-
-访问页面
-
-* http://192.168.1.148:8888/  （登录：admin,123456）
-
-###通过Web访问`VNC Console`
-
-要想Horizon的Console页面正常显示，需要`noVNC`，原理如下：
-
-	vnc.html ---> nova-novncproxy(6080) ---> vnc server(5900)
-
-获取noVNC
-
-	# commit 75d69b9f621606c3b2db48e4778ff41307f65c6d 
-	git clone https://github.com/kanaka/noVNC.git
-
-启动服务
-
-	noVNC/utils/nova-novncproxy --config-file /etc/nova/nova.conf --web `pwd`/noVNC/
-	nova-consoleauth
-
-###通过Client访问`VNC Console`
-
-工作原理
-	
-	xvpvncviewer ---> nova-xvpvncproxy(6081) ---> vnc server(5900)
-
-安装
-
-	# commit fc292084732bd20bc69746a0567001293b63608f
-	git clone https://github.com/cloudbuilders/nova-xvpvncviewer
-
-	cd nova-xvpvncviewer/viewer
-	make
-
-启动服务
-
-	nova-xvpvncproxy --config-file=/etc/nova/nova.conf
-
-手动获取URL
-
-	nova get-vnc-console [vm_id or vm_name] xvpvnc
-
-启动客户端
-
-	java -jar VncViewer.jar url [url]
-
-###使用Apache提供Web服务
-
-见官方文档
 
 
 
@@ -1760,11 +1665,11 @@ swift中没有`glance`这个container，可以手动创建，也可以修改配�
 
 * 确定有该命令：`dhcp_release`，安装包`dnsmasq-utils`
 
-## [Ping] 虚机Ping不通
+## [Ping] 虚机不能被Ping通
 
 * 确认打开SSH和ICMP访问限制
 * 确认打开ip_v4转发
-* 确认`nova.conf`配置`use_ipv6=false`
+* 确认`my_ip`设为能访问外网网卡的IP
 * 参考链接：<https://ask.openstack.org/en/question/120/cantt-ping-my-vm-from-controller-node/>
 
 ## [创建项目] NotFound: ***"Member"
@@ -1775,8 +1680,65 @@ Horizon的“项目”页面点击“创建项目”按钮报错，因为缺少�
 
 ## [nova-consoleauth] UnsupportedRpcVersion: Specified RPC version, 1.0, not supported by this endpoint.
 
-Horizon的Console页面不显示，发现`nova-consoleauth`报错
-
-`noVNC`给`nova-consoleauth`发了一个`check_token`的RPC，RPC版本为空则默认设为1.0，而`nova-consoleauth`这边默认是2.0的API，在检查API版本兼容性时报错，可以硬改成2.0，也能过；
-
+Horizon的Console页面不显示，发现`nova-consoleauth`报错  
+`noVNC`给`nova-consoleauth`发了一个`check_token`的RPC，RPC版本为空则默认设为1.0，而`nova-consoleauth`这边默认是2.0的API，在检查API版本兼容性时报错，可以硬改成2.0，也能过；  
 但是最后页面还是显示不出来，用xvpvncviewer能接上，但看不到任何东西，暂不能确定问题所在。
+
+## [keystone] fatal error: Python.h: No such file or directory
+
+	apt-get install python-dev
+
+## [keystone] fatal error: libxml/xmlversion.h: No such file or directory
+
+	apt-get install libxml2-dev libxslt-dev
+
+## [keystone] Authorization Failed: Unable to sign token. (HTTP 500)
+
+执行`keystone`命令报错，查看日志报错如下：
+
+	 Command 'openssl' returned non-zero exit status 3
+
+需要初始化证书
+
+	keystone-manage pki_setup --keystone-user=root --keystone-group=root
+
+## [nova-novncproxy] Can not find novnc html/js/css files at /usr/share/novnc.
+
+	git clone https://github.com/kanaka/noVNC.git
+	mkdir -p /usr/share/novnc
+	cp -af noVNC/* /usr/share/novnc/
+	nova-novncproxy
+
+## [nova-compute] ERROR nova.virt.driver [-] Compute driver option required, but not specified
+
+`/etc/nova/nova.conf`
+
+	libvirt_type=qemu
+	compute_driver=libvirt.LibvirtDriver
+
+## [nova-compute] No such file or directory: '/usr/local/lib/python2.7/dist-packages/instances'
+
+`/etc/nova/nova.conf`
+
+	state_path=/var/lib/nova
+
+然后
+
+	mkdir -p /var/lib/nova/instances
+	nova-compute
+
+## [nova-compute] libvirtError: internal error Cannot find suitable emulator for i686
+
+	apt-get install guestmount
+
+## [nova-network] Failed to read some config files: /etc/nova/nova-dhcpbridge.conf
+
+`/etc/nova/nova.conf`
+
+	dhcpbridge_flagfile=/etc/nova/nova.conf
+
+## [git clone] error: Couldn't resolve host 'github.com' while accessing https://github.com/openstack/horizon.git/info/refs
+
+没有DNS，在`/etc/resolv.conf`增加：
+
+	nameserver 8.8.8.8
