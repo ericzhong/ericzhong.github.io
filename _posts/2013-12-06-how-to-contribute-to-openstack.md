@@ -1,6 +1,6 @@
 ---
 layout: post
-title: 如何给OpenStack提交代码
+title: 如何提交代码给OpenStack
 tags: openstack fuelweb
 category: it
 ---
@@ -57,3 +57,17 @@ Fuel-Web使用[i18next](http://i18next.com/)库来翻译，资源文件是[trans
   * do NOT use shortcuts (“bt” instead of “button”, “descr” instead of “description”, etc.)
   * nest keys if it makes sense, for example, if there is a few values for statuses, etc.
   * if some keys are used in a few places (for example, in utils), move them to “common.*” namespace
+
+# Troubleshooting
+## Permission denied (publickey)
+执行`git review`时可能会报该错误，使用如下命令调试：
+
+    ssh -vv -p 29418 [username]@review.openstack.org
+	ssh-add
+    ssh -vv -p 29418 [username]@review.openstack.org
+
+参考：
+
+* [Permission denied (publickey)](https://review.openstack.org/Documentation/error-permission-denied.html)
+* [Generating SSH Keys](https://help.github.com/articles/generating-ssh-keys)
+* [Agent admitted failure to sign](https://help.github.com/articles/error-agent-admitted-failure-to-sign)
