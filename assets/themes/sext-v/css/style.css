@@ -47,6 +47,11 @@
   margin-bottom: 0px;
 }
 
+code {
+	color: goldenrod;
+	font-size: 14px;
+}
+
 a {
   color: #3399cc; }
   a:hover {
