@@ -1,6 +1,6 @@
 ---
 layout: post
-title: Animbus代码分析
+title: Dashboard代码分析
 tags: flask web
 category: it
 ---
