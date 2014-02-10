@@ -26,6 +26,7 @@ category: it
 	quit
 
 获取源码
+
 	# commit 5097a03f8f77f54acefefb9886d3064b638184cb
 	git clone git://github.com/openstack/keystone.git
 	
@@ -1465,6 +1466,11 @@ To distribute the partitions across the drives in the ring
 
 
 #Troubleshooting
+
+## [keystone] {"error": {"message": "The resource could not be found.", "code": 404, "title": "Not Found"}}
+
+如果RESTful API的权限是Admin，用5000端口访问就会报错，35357正常。
+
 
 ## Expecting an auth URL via either --os-auth-url or env[OS_AUTH_URL]
 
