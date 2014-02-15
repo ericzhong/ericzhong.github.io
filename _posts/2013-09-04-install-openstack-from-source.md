@@ -7,9 +7,9 @@ category: it
 
 # 安装
 
-## 准备实验环境
+## 声明
 
-安装`Ubuntu 12.04（64-bit）`作为实验环境
+实验环境：VirtualBox虚机中安装Ubuntu 12.04（64-bit），部署OpenStack的Grizzly版本
 
 ## 安装数据库
 
