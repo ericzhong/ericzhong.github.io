@@ -288,3 +288,18 @@ li[id*='dsq-like-'] {
 .gist {
   font-size: 13px;
   line-height: 1.6; }
+
+table {
+    border-collapse: collapse;
+    margin-top: 20px;
+}
+table th {
+    border: 1px solid #dddddd;
+    padding: 6px 15px 6px 6px;
+    background-color: #eeeeee;
+}
+table td {
+    border: 1px solid #dddddd;
+    padding: 5px 15px 5px 6px;
+    background-color: #f8f8f8;
+}

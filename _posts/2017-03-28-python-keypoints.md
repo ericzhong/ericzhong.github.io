@@ -711,7 +711,6 @@ import mod3
 | 字符串              | 有 str 和 unicode 两种类型        | 只有 str 类                              |
 | type 与 class     | 都有。 type(2) => type 'int'   | 只有 class。 type(2) => class 'int'      |
 | zip()            | 返回列表                        | 返回 zip 对象                             |
-|                  |                             |                                       |
 
 
 
