@@ -696,22 +696,22 @@ import mod3
 
 #### Python 2 与 Python 3 的区别
 
-| 区别               | Python 2                       | Python 3                              |
-| :--------------- | :----------------------------- | :------------------------------------ |
-| print            | print "hello"                  | print("hello")                        |
-| xrange(),range() | xrange() 返回迭代器，range() 返回列表    | 没有 xrange()，且 range() 返回可迭代的 range 对象 |
-| 新旧类              | 默认旧类，新类必须继承 object             | 默认新类，没有旧类                             |
-| MRO              | 深度优先                           | 广度优先                                  |
-| bytes()          | 数字转字符串，bytes(2) => '2'         | 工厂方法，bytes(2) => b'\x00\x00'          |
-| 函数注释             | 无                              | 有                                     |
-| 默认编码             | ASCII                          | utf-8                                 |
-| 除法               | 3/2 => 1                       | 3/2 => 1.5                            |
-| 不等于              | 可用 \<\> 或者 !=                  | 只有 !=                                 |
-| 输入               | 输入用 raw_input()，求值用 input()    | raw_input 更名为 input()                 |
-| 字符串              | 有 str 和 unicode 两种类型           | 只有 str 类                              |
-| type 与 class     | 都有。 type(2) =>  \<type 'int'\> | 只有 class。 type(2) =>  \<class 'int'\> |
-| zip()            | 返回列表                           | 返回 zip 对象                             |
-|                  |                                |                                       |
+| 区别               | Python 2                    | Python 3                              |
+| :--------------- | :-------------------------- | :------------------------------------ |
+| print            | print "hello"               | print("hello")                        |
+| xrange(),range() | xrange() 返回迭代器，range() 返回列表 | 没有 xrange()，且 range() 返回可迭代的 range 对象 |
+| 新旧类              | 默认旧类，新类必须继承 object          | 默认新类，没有旧类                             |
+| MRO              | 深度优先                        | 广度优先                                  |
+| bytes()          | 数字转字符串，bytes(2) => '2'      | 工厂方法，bytes(2) => b'\x00\x00'          |
+| 函数注释             | 无                           | 有                                     |
+| 默认编码             | ASCII                       | utf-8                                 |
+| 除法               | 3/2 => 1                    | 3/2 => 1.5                            |
+| 不等于              | 可用 <> 或者 !=                 | 只有 !=                                 |
+| 输入               | 输入用 raw_input()，求值用 input() | raw_input 更名为 input()                 |
+| 字符串              | 有 str 和 unicode 两种类型        | 只有 str 类                              |
+| type 与 class     | 都有。 type(2) => type 'int'   | 只有 class。 type(2) => class 'int'      |
+| zip()            | 返回列表                        | 返回 zip 对象                             |
+|                  |                             |                                       |
 
 
 
