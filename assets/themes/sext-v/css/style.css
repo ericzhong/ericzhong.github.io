@@ -13,25 +13,25 @@
 
 * h1 {
   font-size: 2.0em;
-  margin-top: 30px;
+  margin-top: 50px;
   margin-bottom: 10px;
 }
 
 * h2 {
   font-size: 1.8em;
-  margin-top: 30px;
+  margin-top: 50px;
   margin-bottom: 10px;
 }
 
 * h3 {
   font-size: 1.6em;
-  margin-top: 20px;
+  margin-top: 50px;
   margin-bottom: 5px;
 }
 
 * h4 {
   font-size: 1.4em;
-  margin-top: 20px;
+  margin-top: 50px;
   margin-bottom: 5px;
 }
 
@@ -116,7 +116,7 @@ nav {
     color: #333333; }
 
 #content {
-  width: 680px;
+  width: 720px;
   margin: 0 auto;
   font-size: 1.1em;
   line-height: 1.7em; }
