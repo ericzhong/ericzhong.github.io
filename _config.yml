@@ -5,7 +5,7 @@ permalink: /:year/:month/:day/:title
 exclude: [".rbenv-version", "README.md", "Rakefile"]
 #auto: true
 #pygments: true
-highlighter: pygments
+highlighter: rouge
 #markdown: rdiscount
 markdown: kramdown
 
