@@ -1,6 +1,6 @@
 ---
 layout: post
-title: "[Django] Model 与关系"
+title: "Django 的 Model 与关系"
 tags: Django
 category: 计算机
 ---
@@ -69,6 +69,7 @@ class Article(models.Model):
 * 一对一：一个酒店只能有一个地址，一个地址也只能有一个酒店。
 * 一对多：一个记者可以写多篇稿子，但一个稿子只能有一个作者。
 * 多对多：一本杂志可以包含多篇文章，一篇文章也可以在多本杂志上刊登。
+
 
 
 
